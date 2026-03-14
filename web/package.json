@@ -9,11 +9,14 @@
         "preview": "vite preview"
     },
     "dependencies": {
+        "matter-js": "^0.20.0",
+        "pixi.js": "^8.17.0",
         "preact": "^10.27.2",
         "simplex-noise": "^4.0.3"
     },
     "devDependencies": {
         "@preact/preset-vite": "^2.10.2",
+        "@types/matter-js": "^0.20.2",
         "@types/node": "^24.10.1",
         "typescript": "~5.9.3",
         "vite": "^7.3.1"
