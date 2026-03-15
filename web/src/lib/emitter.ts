@@ -36,3 +36,15 @@ export class Emitter {
         return this;
     }
 }
+
+export class EventBus extends EventTarget {
+    emit(type: string, detail?: any) {
+        this.dispatchEvent(new CustomEvent(type, { detail }))
+    }
+
+    on(type: string, cb: (e: CustomEvent) => void) {
+        this.addEventListener(type, cb as EventListener)
+    }
+}
+
+export const eventBus = new EventBus()

@@ -9,8 +9,9 @@
         "preview": "vite preview"
     },
     "dependencies": {
-        "preact": "^10.27.2",
-        "simplex-noise": "^4.0.3"
+        "@preact/signals": "^2.8.2",
+        "phaser": "^3.90.0",
+        "preact": "^10.27.2"
     },
     "devDependencies": {
         "@preact/preset-vite": "^2.10.2",
