@@ -1,8 +1,0 @@
-[package]
-edition = "2024"
-name = "apparatus"
-version = "0.1.0"
-
-[dependencies]
-avian2d = "0.5.0"
-bevy = "0.18.1"
