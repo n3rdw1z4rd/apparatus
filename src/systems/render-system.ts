@@ -1,5 +1,5 @@
 import { C } from "../components";
-import type { RenderRect } from "../components/render-rect";
+import type { Shape } from "../components/shape";
 import type { Transform } from "../components/transform";
 import { ECS } from "../ecs";
 import { GRID_CELL_SIZE } from "../grid";
@@ -10,7 +10,7 @@ export function renderSystem(ecs: ECS, renderer: CanvasRenderer) {
 
     for (const e of entities) {
         const t = ecs.getComponent<Transform>(e, C.Transform);
-        const r = ecs.getComponent<RenderRect>(e, C.RenderRect);
+        const r = ecs.getComponent<Shape>(e, C.RenderRect);
 
         if (t && r) {
             renderer.context.save();

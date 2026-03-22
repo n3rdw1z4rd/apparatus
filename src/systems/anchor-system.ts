@@ -1,11 +1,11 @@
 import { ECS } from "../ecs";
 import type { Transform } from "../components/transform";
 import type { CanvasRenderer } from "../lib/canvas-renderer";
-import type { RenderRect } from "../components/render-rect";
+import type { Shape } from "../components/shape";
 import { GRID_CELL_SIZE } from "../grid";
 import type { Anchors } from "../components/anchors";
 
-export const DEFAULT_ANCHOR_RADIUS = 6;
+export const DEFAULT_ANCHOR_RADIUS = 4;
 
 export interface AnchorPoint {
     x: number;
@@ -57,7 +57,7 @@ export function renderAnchors(ecs: ECS, renderer: CanvasRenderer) {
 
     for (const e of entities) {
         const t = ecs.getComponent<Transform>(e, "Transform");
-        const r = ecs.getComponent<RenderRect>(e, "RenderRect");
+        const r = ecs.getComponent<Shape>(e, "RenderRect");
         const anchors = ecs.getComponent<Anchors>(e, "Anchors");
 
         if (t && r && anchors) {
