@@ -1,4 +1,6 @@
-export class Input {
+import { Emitter } from "./lib/emitter";
+
+export class Input extends Emitter {
     keys = new Set<string>();
     mouseX = 0;
     mouseY = 0;
@@ -6,13 +8,22 @@ export class Input {
     mousePressed = false;
 
     constructor() {
-        window.addEventListener("keydown", e => this.keys.add(e.key));
+        super();
 
-        window.addEventListener("keyup", e => this.keys.delete(e.key));
+        window.addEventListener("keydown", e => {
+            this.keys.add(e.key);
+            this.emit('keydown', e);
+        });
+
+        window.addEventListener("keyup", e => {
+            this.keys.delete(e.key);
+            this.emit('keyup', e);
+        });
 
         window.addEventListener("mousemove", e => {
             this.mouseX = e.clientX;
             this.mouseY = e.clientY;
+            this.emit('mousemove', e);
         });
 
         window.addEventListener("mousedown", e => {
@@ -20,12 +31,16 @@ export class Input {
                 this.mouseDown = true;
                 this.mousePressed = true;
             }
+
+            this.emit('mousedown', e);
         });
 
         window.addEventListener("mouseup", e => {
             if (e.button === 0) {
                 this.mouseDown = false;
             }
+
+            this.emit('mouseup', e);
         });
     }
 
