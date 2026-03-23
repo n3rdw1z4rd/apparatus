@@ -4,7 +4,7 @@ import type { World } from "@dimforge/rapier2d";
 import type { CanvasRenderer } from "../lib/canvas-renderer";
 import type { Camera } from "../camera";
 import type { Input } from "../input";
-import { getEntityAnchors } from "./anchor-system";
+// import { getEntityAnchors } from "./anchor-system";
 
 let jointPending: {
     entity: number;

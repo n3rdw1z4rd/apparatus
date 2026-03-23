@@ -9,7 +9,7 @@ import { Mode } from "./mode";
 import { dragSystem } from "./systems/drag-system";
 import { drawGrid, GRID_CELL_SIZE, snapToGrid } from "./grid";
 import { createJoints, jointSystem, renderJoints } from "./systems/joint-system";
-import { renderAnchors } from "./systems/anchor-system";
+// import { renderAnchors } from "./systems/anchor-system";
 import { buildPickablesSystem } from "./systems/pickables-system";
 import { createBox } from "./part-factory";
 
@@ -122,8 +122,8 @@ GetRapier().then((rapier: Rapier) => {
         renderSystem(ecs, renderer);
 
         if (mode === Mode.Build) {
-            renderAnchors(ecs, renderer);
-            renderJoints(ecs, renderer);
+            // renderAnchors(ecs, renderer);
+            // renderJoints(ecs, renderer);
         }
 
         renderer.context.restore();

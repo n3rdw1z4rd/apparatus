@@ -3,7 +3,7 @@ import type { Rapier } from "./rapier";
 import type { ECS, Entity } from "./ecs";
 import type { Color } from "./lib/canvas-renderer";
 import { snapToGrid } from "./grid";
-import { getEntityAnchors } from "./systems/anchor-system";
+// import { getEntityAnchors } from "./systems/anchor-system";
 
 export function createBox(
     rapier: Rapier,
@@ -37,8 +37,8 @@ export function createBox(
     ecs.addComponent(entity, "Transform", { x, y, rotation: 0 });
     ecs.addComponent(entity, "RenderRect", { width: w, height: h, color });
 
-    const anchors = getEntityAnchors(w, h);
-    ecs.addComponent(entity, "Anchors", { anchors });
+    // const anchors = getEntityAnchors(w, h);
+    // ecs.addComponent(entity, "Anchors", { anchors });
 
     return entity;
 }
