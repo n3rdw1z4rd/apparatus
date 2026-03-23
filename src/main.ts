@@ -8,7 +8,7 @@ import { renderSystem } from "./systems/render-system";
 import { Mode } from "./mode";
 import { dragSystem } from "./systems/drag-system";
 import { drawGrid, GRID_CELL_SIZE, snapToGrid } from "./grid";
-import { createJoints, jointSystem, renderJoints } from "./systems/joint-system";
+// import { createJoints, jointSystem, renderJoints } from "./systems/joint-system";
 // import { renderAnchors } from "./systems/anchor-system";
 import { buildPickablesSystem } from "./systems/pickables-system";
 import { createBox } from "./part-factory";
@@ -71,7 +71,7 @@ GetRapier().then((rapier: Rapier) => {
         if (pressed && !lastToggle) {
             mode = (mode === Mode.Build) ? Mode.Play : Mode.Build;
 
-            if (mode === Mode.Play) createJoints(ecs, rapier, world);
+            // if (mode === Mode.Play) createJoints(ecs, rapier, world);
         }
 
         lastToggle = pressed;
@@ -116,7 +116,7 @@ GetRapier().then((rapier: Rapier) => {
         if (mode === Mode.Build) {
             buildPickablesSystem(ecs, renderer);
             dragSystem(ecs, input, renderer, camera);
-            jointSystem(ecs, input, renderer, camera);
+            // jointSystem(ecs, input, renderer, camera);
         }
 
         renderSystem(ecs, renderer);

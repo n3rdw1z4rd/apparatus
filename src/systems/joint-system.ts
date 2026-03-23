@@ -2,37 +2,37 @@ import { ECS } from "../ecs";
 import type { Rapier } from "../rapier";
 import type { World } from "@dimforge/rapier2d";
 import type { CanvasRenderer } from "../lib/canvas-renderer";
-import type { Camera } from "../camera";
+// import type { Camera } from "../camera";
 import type { Input } from "../input";
 // import { getEntityAnchors } from "./anchor-system";
 
-let jointPending: {
-    entity: number;
-    anchor: { x: number; y: number };
-} | null = null;
+// let jointPending: {
+//      entity: number;
+//     anchor: { x: number; y: number };
+// } | null = null;
 
 export function jointSystem(
-    ecs: ECS,
+    // ecs: ECS,
     input: Input,
-    renderer: CanvasRenderer,
-    camera: Camera
+    // renderer: CanvasRenderer,
+    // camera: Camera
 ) {
     if (!input.mouseDown) return;
 
     // Convert mouse to world
-    const mouse = {
-        x: (input.mouseX - renderer.width / 2) / camera.zoom + camera.x,
-        y: (input.mouseY - renderer.height / 2) / camera.zoom + camera.y,
-    };
+    // const mouse = {
+    //    x: (input.mouseX - renderer.width / 2) / camera.zoom + camera.x,
+    //    y: (input.mouseY - renderer.height / 2) / camera.zoom + camera.y,
+    // };
 
     // Find closest anchor
     let closestAnchor: { entity: number; anchor: { x: number; y: number } } | null = null;
 
-    const entities = ecs.getEntitiesWith("Transform", "RenderRect");
+    // const entities = ecs.getEntitiesWith("Transform", "RenderRect");
 
-    for (const e of entities) {
-        const t = ecs.getComponent<any>(e, "Transform");
-        const r = ecs.getComponent<any>(e, "RenderRect");
+    //for (const e of entities) {
+        // const t = ecs.getComponent<any>(e, "Transform");
+        // const r = ecs.getComponent<any>(e, "RenderRect");
         // const anchors = getEntityAnchors(t, r.width, r.height);
 
         // for (const a of anchors) {
@@ -46,8 +46,8 @@ export function jointSystem(
         //     }
         // }
 
-        if (closestAnchor) break;
-    }
+        // if (closestAnchor) break;
+    // }
 
     if (!closestAnchor) return;
 

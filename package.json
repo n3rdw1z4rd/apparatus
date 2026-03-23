@@ -6,7 +6,11 @@
     "scripts": {
         "dev": "vite",
         "build": "tsc -b && vite build",
-        "preview": "vite preview"
+        "preview": "vite preview",
+	"podman-clean": "podman images | grep apparatus| awk '{print $3}' | xargs -r podman rmi",
+        "podman-build": "sudo podman build -t apparatus .",
+        "podman-run": "sudo podman run -d -p 5173:80 --restart unless-stopped --name apparatus apparatus",
+        "podman-update": "sudo podman rm -f apparatus && npm run podman-build && npm run podman-run"
     },
     "dependencies": {
         "@dimforge/rapier2d": "^0.19.3",

@@ -7,11 +7,11 @@
 
 // export const DEFAULT_ANCHOR_RADIUS = 4;
 
-// export interface AnchorPoint {
-//     x: number;
-//     y: number;
-//     radius?: number;
-// }
+export interface AnchorPoint {
+    x: number;
+    y: number;
+    radius?: number;
+}
 
 // export function getEntityAnchors(width: number, height: number, cellSize: number = GRID_CELL_SIZE) {
 //     const anchors: { x: number, y: number }[] = [];
