@@ -1,4 +1,5 @@
-import { ECS } from "../ecs";
+/*
+ * import { ECS } from "../ecs";
 import type { Rapier } from "../rapier";
 import type { World } from "@dimforge/rapier2d";
 import type { CanvasRenderer } from "../lib/canvas-renderer";
@@ -97,3 +98,4 @@ export function createJoints(ecs: ECS, rapier: Rapier, world: World) {
         );
     }
 }
+*/
