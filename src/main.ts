@@ -50,14 +50,21 @@ GetRapier().then((rapier: Rapier) => {
 
     createBox(
         rapier, world, ecs,
-        64, 60,
+        64, 64,
         BLOCK_SIZE * 4, BLOCK_SIZE * 3,
         'blue',
     );
 
     createBox(
         rapier, world, ecs,
-        -100, snapToGrid(-renderer.height / 2),
+        -256, -256,
+        256, BLOCK_SIZE,
+        'magenta',
+    );
+
+    createBox(
+        rapier, world, ecs,
+        256, -256,
         256, BLOCK_SIZE,
         'magenta',
     );
