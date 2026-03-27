@@ -1,7 +1,7 @@
 import { C } from "../components";
 import type { Shape } from "../components/shape";
 import type { Transform } from "../components/transform";
-import { ECS } from "../ecs";
+import { ECS } from "../lib/ecs";
 import { GRID_CELL_SIZE } from "../grid";
 import type { CanvasRenderer } from "../lib/canvas-renderer";
 

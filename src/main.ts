@@ -1,8 +1,8 @@
 import { Camera } from "./camera";
-import { GetRapier, type Rapier } from "./rapier";
-import { Input } from "./input";
+import { GetRapier, type Rapier } from "./lib/rapier";
+import { Input } from "./lib/input";
 import { CanvasRenderer } from "./lib/canvas-renderer";
-import { ECS } from "./ecs";
+import { ECS } from "./lib/ecs";
 import { physicsSystem } from "./systems/physics-system";
 import { renderSystem } from "./systems/render-system";
 import { Mode } from "./mode";
@@ -12,25 +12,14 @@ import { drawGrid, GRID_CELL_SIZE, snapToGrid } from "./grid";
 // import { renderAnchors } from "./systems/anchor-system";
 import { buildPickablesSystem } from "./systems/pickables-system";
 import { createBox } from "./part-factory";
+import type { World } from "@dimforge/rapier2d";
 
 const FIXED_DT = 1 / 60;
 const GRAVITY_SCALE = 100;
 const GRAVITY = { x: 0, y: 9.81 * GRAVITY_SCALE };
 const BLOCK_SIZE = GRID_CELL_SIZE;
 
-GetRapier().then((rapier: Rapier) => {
-    const ecs = new ECS();
-
-    const world = new rapier.World(GRAVITY);
-
-    const input = new Input();
-
-    const renderer = new CanvasRenderer();
-    renderer.appendTo(document.body);
-    renderer.resize();
-
-    const camera = new Camera();
-
+function createInitialObjects(rapier: Rapier, world: World, ecs: ECS, renderer: CanvasRenderer) {
     createBox(
         rapier, world, ecs,
         0,
@@ -68,6 +57,19 @@ GetRapier().then((rapier: Rapier) => {
         256, BLOCK_SIZE,
         'magenta',
     );
+}
+
+GetRapier().then((rapier: Rapier) => {
+    const ecs = new ECS();
+    const world = new rapier.World(GRAVITY);
+    const input = new Input();
+    const renderer = new CanvasRenderer();
+    const camera = new Camera();
+
+    renderer.appendTo(document.body);
+    renderer.resize();
+
+    createInitialObjects(rapier, world, ecs, renderer);
 
     let mode = Mode.Build;
     let lastToggle = false;

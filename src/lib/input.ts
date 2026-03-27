@@ -1,4 +1,4 @@
-import { Emitter } from "./lib/emitter";
+import { Emitter } from "./emitter";
 
 export class Input extends Emitter {
     keys = new Set<string>();

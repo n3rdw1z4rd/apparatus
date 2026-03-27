@@ -1,5 +1,5 @@
 import type { Camera } from "../camera";
-import type { Entity } from "../ecs";
+import type { Entity } from "./ecs";
 
 export type Color = string | CanvasGradient | CanvasPattern;
 

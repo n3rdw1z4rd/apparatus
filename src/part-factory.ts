@@ -1,6 +1,6 @@
 import type { World } from "@dimforge/rapier2d";
-import type { Rapier } from "./rapier";
-import type { ECS, Entity } from "./ecs";
+import type { Rapier } from "./lib/rapier";
+import type { ECS, Entity } from "./lib/ecs";
 import type { Color } from "./lib/canvas-renderer";
 import { snapToGrid } from "./grid";
 // import { getEntityAnchors } from "./systems/anchor-system";

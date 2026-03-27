@@ -1,4 +1,4 @@
-import { ECS } from "../ecs";
+import { ECS } from "../lib/ecs";
 import { snapToGrid } from "../grid";
 // import { getEntityAnchors, snapToAnchors } from "./anchor-system";
 import type { Camera } from "../camera";

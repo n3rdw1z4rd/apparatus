@@ -1,6 +1,6 @@
 import type { Shape } from "../components/shape";
 import type { Transform } from "../components/transform";
-import type { ECS } from "../ecs";
+import type { ECS } from "../lib/ecs";
 import type { CanvasRenderer } from "../lib/canvas-renderer";
 
 export function buildPickablesSystem(ecs: ECS, renderer: CanvasRenderer) {
