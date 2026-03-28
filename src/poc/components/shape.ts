@@ -1,4 +1,4 @@
-import type { Color } from "../lib/canvas-renderer";
+import type { Color } from "../../lib/canvas-renderer";
 
 interface BaseShape {
     color: Color;

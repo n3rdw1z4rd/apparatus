@@ -1,9 +1,8 @@
-import { ECS } from "../lib/ecs";
+import { ECS } from "../../lib/ecs";
 import { snapToGrid } from "../grid";
-// import { getEntityAnchors, snapToAnchors } from "./anchor-system";
 import type { Camera } from "../camera";
-import type { CanvasRenderer } from "../lib/canvas-renderer";
-import type { Input } from "../lib/input";
+import type { CanvasRenderer } from "../../lib/canvas-renderer";
+import type { Input } from "../../lib/input";
 
 export function dragSystem(ecs: ECS, input: Input, renderer: CanvasRenderer, camera: Camera) {
     const mouseX = input.mouseX;

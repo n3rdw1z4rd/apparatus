@@ -1,5 +1,5 @@
 import type { Camera } from "./camera";
-import type { CanvasRenderer } from "./lib/canvas-renderer";
+import type { CanvasRenderer } from "../lib/canvas-renderer";
 
 export function screenToWorld(
     mouseX: number,
