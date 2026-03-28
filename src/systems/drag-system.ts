@@ -36,7 +36,7 @@ export function dragSystem(ecs: ECS, input: Input, renderer: CanvasRenderer, cam
 
     for (const e of dragging) {
         const drag = ecs.getComponent<any>(e, "Drag");
-        const rigidbody = ecs.getComponent<any>(e, "RigidBody");
+        // const rigidbody = ecs.getComponent<any>(e, "RigidBody");
         const transform = ecs.getComponent<any>(e, "Transform");
         // const renderRect = ecs.getComponent<any>(e, "RenderRect");
 
@@ -57,6 +57,6 @@ export function dragSystem(ecs: ECS, input: Input, renderer: CanvasRenderer, cam
         // transform.x = snap(snapped.x);
         // transform.y = snap(snapped.y);
 
-        rigidbody.body.setTranslation({ x: transform.x, y: transform.y }, true);
+        // rigidbody.body.setTranslation({ x: transform.x, y: transform.y }, true);
     }
 }

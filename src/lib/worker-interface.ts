@@ -8,10 +8,12 @@ export class WorkerInterface extends Emitter {
 
         this._worker = new Worker(new URL(path, import.meta.url), { type: 'module' });
         this._worker.onerror = (error: ErrorEvent) => this.emit('error', error);
-        this._worker.onmessage = (message: MessageEvent) => this.emit('message', message);
+
+        this._worker.onmessage = ({ data: { type, payload } }: MessageEvent) =>
+            this.emit(type, payload);
     }
 
-    postMessage(message: any, options?: StructuredSerializeOptions | undefined) {
-        this._worker.postMessage(message, options);
+    postMessage(type: string, payload?: any, options?: StructuredSerializeOptions | undefined) {
+        this._worker.postMessage({ type, payload }, options);
     }
 }

@@ -2,24 +2,25 @@ import type { Shape } from "../components/shape";
 import type { Transform } from "../components/transform";
 import type { ECS } from "../lib/ecs";
 import type { CanvasRenderer } from "../lib/canvas-renderer";
+import { C } from "../components";
 
 export function buildPickablesSystem(ecs: ECS, renderer: CanvasRenderer) {
     renderer.clearPickables();
 
-    const entities = ecs.getEntitiesWith("Transform", "RenderRect");
+    const entities = ecs.getEntitiesWith(C.Transform, C.Shape);
 
     for (const e of entities) {
-        const t = ecs.getComponent<Transform>(e, "Transform");
-        const r = ecs.getComponent<Shape>(e, "RenderRect");
+        const transform = ecs.getComponent<Transform>(e, C.Transform);
+        const shape = ecs.getComponent<Shape>(e, C.Shape);
 
-        if (t && r) {
+        if (transform && shape) {
             renderer.registerPickable({
                 entity: e,
-                x: t.x,
-                y: t.y,
-                width: r.width,
-                height: r.height,
-                rotation: t.rotation,
+                x: transform.x,
+                y: transform.y,
+                width: shape.width,
+                height: shape.height,
+                rotation: transform.rotation,
             });
         }
     }

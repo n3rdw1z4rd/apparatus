@@ -84,7 +84,7 @@ export class CanvasRenderer {
     }
 
     clearPickables() {
-        this.pickables = [];
+        this.pickables.length = 0;
     }
 
     pick(mouseX: number, mouseY: number, camera: Camera): Entity | null {
@@ -124,7 +124,10 @@ export class CanvasRenderer {
         this.context.strokeStyle = params.strokeColor ?? params.color ?? 'white';
         this.context.fillStyle = params.fillColor ?? params.color ?? 'white';
         this.context.lineWidth = params.size ?? 1;
-        this.context.setLineDash(params.lineDash ?? []);
+
+        if (params.lineDash) {
+            this.context.setLineDash(params.lineDash);
+        }
 
         if (params.filled === true) {
             this.context.fillRect(x, y, width, height);
@@ -147,7 +150,10 @@ export class CanvasRenderer {
     drawLine(x1: number, y1: number, x2: number, y2: number, params: DrawParams = {}) {
         this.context.strokeStyle = params.color ?? 'white';
         this.context.lineWidth = params.size ?? 1;
-        this.context.setLineDash(params.lineDash ?? []);
+
+        if (params.lineDash) {
+            this.context.setLineDash(params.lineDash);
+        }
 
         this.context.beginPath();
         this.context.moveTo(x1, y1);
@@ -160,7 +166,10 @@ export class CanvasRenderer {
         this.context.strokeStyle = params.strokeColor ?? params.color ?? 'white';
         this.context.fillStyle = params.fillColor ?? params.color ?? 'white';
         this.context.lineWidth = params.size ?? 1;
-        this.context.setLineDash(params.lineDash ?? []);
+
+        if (params.lineDash) {
+            this.context.setLineDash(params.lineDash);
+        }
 
         this.context.beginPath();
         this.context.arc(x, y, radius, 0, 2 * Math.PI);
@@ -177,5 +186,42 @@ export class CanvasRenderer {
         this.context.fillStyle = params.color ?? 'white';
 
         this.context.fillText(text, x, y);
+    }
+
+    private _animationId: number = 0;
+    private _isRunning: boolean = false;
+    private _lastTime: number = 0;
+    private _frameTime: number = 0;
+    private _frameCount: number = 0;
+    private _fps: number = 0;
+
+    setAnimationLoop(callback: (deltaTime: number, fps: number) => void) {
+        if (!this._isRunning) {
+            const update = (time: DOMHighResTimeStamp = 0) => {
+                const deltaTime = (time - this._lastTime) / 1000;
+                this._lastTime = time;
+
+                if (this._frameTime + 1000 >= time) {
+                    this._frameCount += 1;
+                } else {
+                    this._frameTime = time;
+                    this._fps = this._frameCount;
+                    this._frameCount = 0;
+                }
+
+                callback(deltaTime, this._fps);
+
+                this._animationId = requestAnimationFrame(update);
+            };
+
+            update();
+            this._isRunning = true;
+        }
+    }
+
+    stopAnimationLoop() {
+        if (this._isRunning) {
+            cancelAnimationFrame(this._animationId);
+        }
     }
 }
