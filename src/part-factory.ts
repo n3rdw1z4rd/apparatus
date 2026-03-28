@@ -22,3 +22,22 @@ export function createBox(
 
     return entity;
 }
+
+export function createBall(
+    ecs: ECS,
+    x: number,
+    y: number,
+    radius: number,
+    color: Color,
+    fixed = false,
+): Entity {
+    const entity = ecs.createEntity();
+
+    x = snapToGrid(x);
+    y = snapToGrid(y);
+
+    ecs.addComponent(entity, C.Transform, { x, y, rotation: 0, fixed });
+    ecs.addComponent(entity, C.Shape, { type: 'circle', radius, color });
+
+    return entity;
+}

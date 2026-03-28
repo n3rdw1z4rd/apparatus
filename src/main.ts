@@ -7,7 +7,7 @@ import { Mode } from "./mode";
 import { dragSystem } from "./systems/drag-system";
 import { drawGrid, GRID_CELL_SIZE, snapToGrid } from "./grid";
 import { buildPickablesSystem } from "./systems/pickables-system";
-import { createBox } from "./part-factory";
+import { createBall, createBox } from "./part-factory";
 import { log } from "./lib/log";
 import { C } from "./components";
 import type { Shape } from "./components/shape";
@@ -43,6 +43,13 @@ function createInitialObjects(ecs: ECS, renderer: CanvasRenderer) {
         true,
     );
 
+    createBall(ecs,
+        200, -100,
+        BLOCK_SIZE / 2,
+        'orange',
+        // true,
+    )
+
     createBox(ecs,
         64, 64,
         BLOCK_SIZE * 4, BLOCK_SIZE * 3,
@@ -67,20 +74,12 @@ function serializeBodies(ecs: ECS) {
 
     const entities = ecs.getEntitiesWith(C.Transform, C.Shape);
 
-    for (const e of entities) {
-        const transform = ecs.getComponent<Transform>(e, C.Transform);
-        const shape = ecs.getComponent<Shape>(e, C.Shape);
+    for (const id of entities) {
+        const transform = ecs.getComponent<Transform>(id, C.Transform);
+        const shape = ecs.getComponent<Shape>(id, C.Shape);
 
         if (transform && shape) {
-            bodies.push({
-                id: e,
-                x: transform.x,
-                y: transform.y,
-                rotation: transform.rotation,
-                width: shape.width,
-                height: shape.height,
-                fixed: transform.fixed,
-            });
+            bodies.push({ id, transform, shape });
         }
     }
 

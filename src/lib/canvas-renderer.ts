@@ -1,4 +1,6 @@
 import type { Camera } from "../camera";
+import type { Shape } from "../components/shape";
+import type { Transform } from "../components/transform";
 import type { Entity } from "./ecs";
 
 export type Color = string | CanvasGradient | CanvasPattern;
@@ -17,11 +19,8 @@ export interface DrawParams {
 
 type Pickable = {
     entity: number,
-    x: number,
-    y: number,
-    width: number,
-    height: number,
-    rotation: number,
+    transform: Transform,
+    shape: Shape,
 };
 
 export class CanvasRenderer {
@@ -93,23 +92,38 @@ export class CanvasRenderer {
         for (let i = this.pickables.length - 1; i >= 0; i--) {
             const p = this.pickables[i];
 
-            const dx = world.x - p.x;
-            const dy = world.y - p.y;
+            const dx = world.x - p.transform.x;
+            const dy = world.y - p.transform.y;
 
-            const cos = Math.cos(-p.rotation);
-            const sin = Math.sin(-p.rotation);
+            const cos = Math.cos(-p.transform.rotation);
+            const sin = Math.sin(-p.transform.rotation);
 
             const localX = dx * cos - dy * sin;
             const localY = dx * sin + dy * cos;
 
-            if (
-                localX >= -p.width / 2 &&
-                localX <= p.width / 2 &&
-                localY >= -p.height / 2 &&
-                localY <= p.height / 2
-            ) {
-                return p.entity;
+            switch (p.shape.type) {
+                case 'rectangle':
+                    if (
+                        localX >= -p.shape.width / 2 &&
+                        localX <= p.shape.width / 2 &&
+                        localY >= -p.shape.height / 2 &&
+                        localY <= p.shape.height / 2
+                    ) {
+                        return p.entity;
+                    }
+
+                    break;
+
+                case 'circle':
+                    if ((dx * dx + dy * dy) <= p.shape.radius * p.shape.radius) {
+                        return p.entity;
+                    }
+
+                    break;
+
+                default: break;
             }
+
         }
 
         return null;

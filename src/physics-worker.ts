@@ -76,7 +76,8 @@ const run = () => {
 const createBody = (payload: any) => {
     if (isLoaded) {
         if (world) {
-            const { id, x, y, width, height, rotation, fixed } = payload;
+            const { id, transform, shape } = payload;
+            const { x, y, rotation, fixed } = transform;
 
             const body = world.createRigidBody(
                 (fixed
@@ -85,14 +86,30 @@ const createBody = (payload: any) => {
                 ).setTranslation(x, y).setRotation(rotation),
             );
 
-            world.createCollider(
-                rapier.ColliderDesc.cuboid(width / 2, height / 2),
-                body,
-            );
+            switch (shape.type) {
+                case 'rectangle':
+                    world.createCollider(
+                        rapier.ColliderDesc.cuboid(shape.width / 2, shape.height / 2),
+                        body,
+                    );
+
+                    break;
+
+                case 'circle':
+                    world.createCollider(
+                        rapier.ColliderDesc.ball(shape.radius),
+                        body,
+                    );
+
+                    break;
+
+                default: break;
+            }
+
 
             bodies.set(body.handle, id);
 
-            post('info', `body created: (${body.handle}) { ${id}, ${x}, ${y}, ${width}, ${height}, ${rotation}, ${fixed} }`);
+            post('info', `body created: (${body.handle}):  ${id}`);
         } else post('warning', 'createBody: world not created');
     } else post('warning', 'createBody: rapier not loaded');
 };

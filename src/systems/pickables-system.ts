@@ -9,19 +9,12 @@ export function buildPickablesSystem(ecs: ECS, renderer: CanvasRenderer) {
 
     const entities = ecs.getEntitiesWith(C.Transform, C.Shape);
 
-    for (const e of entities) {
-        const transform = ecs.getComponent<Transform>(e, C.Transform);
-        const shape = ecs.getComponent<Shape>(e, C.Shape);
+    for (const entity of entities) {
+        const transform = ecs.getComponent<Transform>(entity, C.Transform);
+        const shape = ecs.getComponent<Shape>(entity, C.Shape);
 
         if (transform && shape) {
-            renderer.registerPickable({
-                entity: e,
-                x: transform.x,
-                y: transform.y,
-                width: shape.width,
-                height: shape.height,
-                rotation: transform.rotation,
-            });
+            renderer.registerPickable({ entity, transform, shape });
         }
     }
 }
