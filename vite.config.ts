@@ -8,4 +8,8 @@ export default defineConfig({
         wasm(),
         // preact(),
     ],
+    worker: {
+        format: 'es',
+        plugins: () => [wasm()],
+    }
 });

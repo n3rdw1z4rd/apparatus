@@ -1,13 +1,18 @@
-import { Emitter } from './emitter';
+import { Emitter } from "./lib/emitter";
 
-export class WorkerInterface extends Emitter {
+export class PhysicsInterface extends Emitter {
     private _worker: Worker;
 
-    constructor(path: string) {
+    constructor() {
         super();
 
-        this._worker = new Worker(new URL(path, import.meta.url), { type: 'module' });
-        this._worker.onerror = (error: ErrorEvent) => this.emit('error', error);
+        this._worker = new Worker(
+            new URL('./physics-worker.ts', import.meta.url),
+            { type: 'module' },
+        );
+
+        this._worker.onerror = (error: ErrorEvent) =>
+            this.emit('error', error);
 
         this._worker.onmessage = ({ data: { type, payload } }: MessageEvent) =>
             this.emit(type, payload);

@@ -8,11 +8,11 @@ import { dragSystem } from "./systems/drag-system";
 import { drawGrid, GRID_CELL_SIZE, snapToGrid } from "./grid";
 import { buildPickablesSystem } from "./systems/pickables-system";
 import { createBox } from "./part-factory";
-import { WorkerInterface } from "./lib/worker-interface";
 import { log } from "./lib/log";
 import { C } from "./components";
 import type { Shape } from "./components/shape";
 import type { Transform } from "./components/transform";
+import { PhysicsInterface } from "./physics-interface";
 
 const GRAVITY_SCALE = 100;
 const GRAVITY = { x: 0, y: 9.81 * GRAVITY_SCALE };
@@ -87,12 +87,14 @@ function serializeBodies(ecs: ECS) {
     return bodies;
 }
 
-const physics = new WorkerInterface('/src/physics-worker.ts');
+const physics = new PhysicsInterface();
 
 physics.on('info', (msg: string) => log('[physics] INFO:', msg));
 physics.on('warning', (msg: string) => log('[physics] WARNING:', msg));
+physics.on('error', (err: ErrorEvent) => log('[physics] ERROR:', err));
 
 physics.on('loaded', () => {
+    log('physics loaded')
     const ecs = new ECS();
     const input = new Input();
     const renderer = new CanvasRenderer();
