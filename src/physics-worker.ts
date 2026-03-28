@@ -1,4 +1,3 @@
-import { log } from "./lib/log";
 import { GetRapier, type Rapier } from "./lib/rapier";
 import { RigidBody, World, type Vector } from "@dimforge/rapier2d";
 
@@ -22,45 +21,6 @@ GetRapier().then((RAPIER: Rapier) => {
     isLoaded = true;
     post('loaded');
 });
-
-const createWorld = (g: Vector) => {
-    if (isLoaded) {
-        gravity = g;
-
-        if (!world) {
-            world = new World(gravity);
-            post('info', 'world created');
-        }
-    } else post('warning', 'createWorld: rapier not loaded');
-};
-
-// const run = () => {
-//     if (isLoaded) {
-//         if (world) {
-//             if (!isRunning) {
-
-//                 intervalHandle = setInterval(() => {
-//                     world!.step();
-
-//                     const bodyData: number[] = [];
-
-//                     world!.bodies.forEach((body: RigidBody) => {
-//                         const { x, y } = body.translation();
-//                         const rotation = body.rotation();
-
-//                         const id = bodies.get(body.handle);
-//                         bodyData.push(id ?? -1, x, y, rotation);
-//                     });
-
-//                     post('step', bodyData);
-//                 }, INTERVAL_TIME);
-
-//                 isRunning = true;
-//                 post('info', 'world started');
-//             }
-//         }
-//     }
-// };
 
 const stop = () => {
     if (isRunning) {
@@ -114,8 +74,6 @@ const run = () => {
 };
 
 const createBody = (payload: any) => {
-    // log('createBody:', payload);
-
     if (isLoaded) {
         if (world) {
             const { id, x, y, width, height, rotation, fixed } = payload;

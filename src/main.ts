@@ -93,12 +93,7 @@ physics.on('info', (msg: string) => log('[physics] INFO:', msg));
 physics.on('warning', (msg: string) => log('[physics] WARNING:', msg));
 
 physics.on('loaded', () => {
-    log('physics loaded!');
-
-    // physics.postMessage('create_world', GRAVITY);
-
     const ecs = new ECS();
-
     const input = new Input();
     const renderer = new CanvasRenderer();
     const camera = new Camera();
@@ -131,7 +126,6 @@ physics.on('loaded', () => {
     }
 
     physics.on('step', (data: any) => {
-        log({ step: data });
         const bodies: Map<number, { x: number, y: number, rotation: number }> = new Map();
 
         for (let i = 0; i < data.length; i += 4) {
@@ -162,7 +156,7 @@ physics.on('loaded', () => {
         }
     });
 
-    renderer.setAnimationLoop((deltaTime: number, fps: number) => {
+    renderer.setAnimationLoop((_deltaTime: number, fps: number) => {
         handleModeToggle(input);
 
         renderer.clear();
