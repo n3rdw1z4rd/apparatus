@@ -1,8 +1,3 @@
-import type { Camera } from "../camera";
-import type { Shape } from "../poc/components/shape";
-import type { Transform } from "../poc/components/transform";
-import type { Entity } from "./ecs";
-
 export type Color = string | CanvasGradient | CanvasPattern;
 
 export interface DrawParams {
@@ -17,19 +12,10 @@ export interface DrawParams {
     lineDash?: number[],
 }
 
-type Pickable = {
-    entity: number,
-    transform: Transform,
-    shape: Shape,
-};
-
 export class CanvasRenderer {
     canvas: HTMLCanvasElement;
     context: CanvasRenderingContext2D;
-
     drawCentered: boolean = true;
-
-    private pickables: Pickable[] = [];
 
     get width(): number { return this.context.canvas.width; }
     get height(): number { return this.context.canvas.height; }
@@ -69,64 +55,6 @@ export class CanvasRenderer {
     clear(color: Color = 'black') {
         this.context.fillStyle = color;
         this.context.fillRect(0, 0, this.width, this.height);
-    }
-
-    screenToWorld(mouseX: number, mouseY: number, camera: Camera) {
-        return {
-            x: (mouseX - this.width / 2) / camera.zoom + camera.x,
-            y: (mouseY - this.height / 2) / camera.zoom + camera.y,
-        };
-    }
-
-    registerPickable(p: Pickable) {
-        this.pickables.push(p);
-    }
-
-    clearPickables() {
-        this.pickables.length = 0;
-    }
-
-    pick(mouseX: number, mouseY: number, camera: Camera): Entity | null {
-        const world = this.screenToWorld(mouseX, mouseY, camera);
-
-        for (let i = this.pickables.length - 1; i >= 0; i--) {
-            const p = this.pickables[i];
-
-            const dx = world.x - p.transform.x;
-            const dy = world.y - p.transform.y;
-
-            const cos = Math.cos(-p.transform.rotation);
-            const sin = Math.sin(-p.transform.rotation);
-
-            const localX = dx * cos - dy * sin;
-            const localY = dx * sin + dy * cos;
-
-            switch (p.shape.type) {
-                case 'rectangle':
-                    if (
-                        localX >= -p.shape.width / 2 &&
-                        localX <= p.shape.width / 2 &&
-                        localY >= -p.shape.height / 2 &&
-                        localY <= p.shape.height / 2
-                    ) {
-                        return p.entity;
-                    }
-
-                    break;
-
-                case 'circle':
-                    if ((dx * dx + dy * dy) <= p.shape.radius * p.shape.radius) {
-                        return p.entity;
-                    }
-
-                    break;
-
-                default: break;
-            }
-
-        }
-
-        return null;
     }
 
     drawRect(x: number, y: number, width: number, height: number, params: DrawParams = {}) {

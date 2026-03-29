@@ -2,10 +2,10 @@ import { Emitter } from "./emitter";
 
 export class Input extends Emitter {
     keys = new Set<string>();
-    mouseX = 0;
-    mouseY = 0;
-    mouseDown = false;
-    mousePressed = false;
+    pointerX = 0;
+    pointerY = 0;
+    pointerDown = false;
+    pointerPressed = false;
 
     constructor() {
         super();
@@ -20,28 +20,30 @@ export class Input extends Emitter {
             this.emit('keyup', e);
         });
 
-        window.addEventListener("mousemove", e => {
-            this.mouseX = e.clientX;
-            this.mouseY = e.clientY;
-            this.emit('mousemove', e);
+        window.addEventListener("pointermove", e => {
+            this.pointerX = e.clientX;
+            this.pointerY = e.clientY;
+            this.emit('pointermove', e);
         });
 
-        window.addEventListener("mousedown", e => {
+        window.addEventListener("pointerdown", e => {
             if (e.button === 0) {
-                this.mouseDown = true;
-                this.mousePressed = true;
+                this.pointerDown = true;
+                this.pointerPressed = true;
             }
 
-            this.emit('mousedown', e);
+            this.emit('pointerdown', e);
         });
 
-        window.addEventListener("mouseup", e => {
+        window.addEventListener("pointerup", e => {
             if (e.button === 0) {
-                this.mouseDown = false;
+                this.pointerDown = false;
             }
 
-            this.emit('mouseup', e);
+            this.emit('pointerup', e);
         });
+
+        window.addEventListener("wheel", e => this.emit('wheel', e));
     }
 
     isDown(key: string) {

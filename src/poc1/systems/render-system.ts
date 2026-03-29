@@ -10,14 +10,14 @@ function drawShape(renderer: CanvasRenderer, transform: Transform, shape: Shape)
         case 'rectangle':
             renderer.drawRect(0, 0, shape.width, shape.height, {
                 filled: true,
-                fillColor: shape.color,
+                color: shape.color,
             });
 
             break;
         case 'circle':
             renderer.drawCircle(0, 0, shape.radius, {
                 filled: true,
-                fillColor: shape.color,
+                color: shape.color,
             });
 
             break;

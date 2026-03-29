@@ -5,12 +5,12 @@ import type { CanvasRenderer } from "../../lib/canvas-renderer";
 import type { Input } from "../../lib/input";
 
 export function dragSystem(ecs: ECS, input: Input, renderer: CanvasRenderer, camera: Camera) {
-    const mouseX = input.mouseX;
-    const mouseY = input.mouseY;
+    const mouseX = input.pointerX;
+    const mouseY = input.pointerY;
 
     const mouse = renderer.screenToWorld(mouseX, mouseY, camera);
 
-    const pickedEntity = (input.mousePressed && !ecs.getEntitiesWith("Drag").length)
+    const pickedEntity = (input.pointerPressed && !ecs.getEntitiesWith("Drag").length)
         ? renderer.pick(mouseX, mouseY, camera)
         : null;
 
@@ -23,7 +23,7 @@ export function dragSystem(ecs: ECS, input: Input, renderer: CanvasRenderer, cam
         });
     }
 
-    if (!input.mouseDown) {
+    if (!input.pointerDown) {
         const dragging = ecs.getEntitiesWith("Drag");
 
         for (const e of dragging) {

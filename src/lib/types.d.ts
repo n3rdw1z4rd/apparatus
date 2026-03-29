@@ -1,1 +1,1 @@
-declare type XYZ = { x: number, y: number, z: number };
+declare type XY = { x: number, y: number };
