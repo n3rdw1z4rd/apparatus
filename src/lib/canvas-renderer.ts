@@ -1,3 +1,5 @@
+import type { Camera } from "../poc2/camera";
+
 export type Color = string | CanvasGradient | CanvasPattern;
 
 export interface DrawParams {
@@ -55,6 +57,13 @@ export class CanvasRenderer {
     clear(color: Color = 'black') {
         this.context.fillStyle = color;
         this.context.fillRect(0, 0, this.width, this.height);
+    }
+
+    screenToWorld(x: number, y: number, camera: Camera) {
+        return {
+            x: (x - this.width / 2) / camera.zoom + camera.x,
+            y: (y - this.height / 2) / camera.zoom + camera.y,
+        };
     }
 
     drawRect(x: number, y: number, width: number, height: number, params: DrawParams = {}) {

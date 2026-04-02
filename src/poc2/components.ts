@@ -1,11 +1,12 @@
 import type { Color } from "../lib/canvas-renderer";
 
 export const C = {
-    Transform: "Transform",
+    Drag: "Drag",
     Shape: "Shape",
+    Transform: "Transform",
 };
 
-interface BaseShape {
+export interface BaseShape {
     color: Color;
 }
 
@@ -25,4 +26,9 @@ export type Shape = BoxShape | BallShape;
 export interface Transform {
     position: XY;
     rotation: number;
+}
+
+export interface Drag {
+    offsetX: number;
+    offsetY: number;
 }

@@ -1,9 +1,12 @@
 import { CanvasRenderer } from "../lib/canvas-renderer";
-import { ECS } from "../lib/ecs";
+import { ECS, type Entity } from "../lib/ecs";
 import { Input } from "../lib/input";
+import { log } from "../lib/log";
 import { Camera } from "./camera";
 import { CreateBody } from "./factory";
 import { drawGrid } from "./grid";
+import { DragSystem } from "./systems/drag-system";
+import { PickingSystem } from "./systems/picking-system";
 import { RenderSystem } from "./systems/render-system";
 
 const GRAVITY_SCALE = 100;
@@ -89,6 +92,9 @@ const camera = new Camera();
 renderer.appendTo(document.body);
 renderer.resize();
 
+const rendererHalfWidth = renderer.width / 2;
+const rendererHalfHeight = renderer.height / 2;
+
 // let mode = Mode.Build;
 // let lastToggle = false;
 
@@ -162,15 +168,15 @@ CreateBody(ecs, {
 renderer.setAnimationLoop((_deltaTime: number, fps: number) => {
     renderer.clear();
     renderer.context.save();
-
-    renderer.context.translate(
-        renderer.width / 2 - camera.x,
-        renderer.height / 2 - camera.y,
-    );
-
+    renderer.context.translate(rendererHalfWidth - camera.x, rendererHalfHeight - camera.y);
     renderer.context.scale(camera.zoom, camera.zoom);
 
     drawGrid(renderer, camera);
+
+    const pickedEntity = PickingSystem(ecs, input, renderer, camera);
+    if (pickedEntity) log({ pickedEntity });
+
+    DragSystem(ecs, input, renderer, camera, pickedEntity);
 
     RenderSystem(ecs, renderer);
 
@@ -184,14 +190,14 @@ renderer.setAnimationLoop((_deltaTime: number, fps: number) => {
     );
 });
 
-input.on('pointermove', (ev: PointerEvent) => {
-    if (input.pointerDown/** && !dragging && !picked*/) {
-        const { movementX, movementY } = ev;
+// input.on('pointermove', (ev: PointerEvent) => {
+//     if (input.pointerDown/** && !dragging && !picked*/) {
+//         const { movementX, movementY } = ev;
 
-        camera.x -= movementX;
-        camera.y -= movementY;
-    }
-});
+//         camera.x -= movementX;
+//         camera.y -= movementY;
+//     }
+// });
 
 input.on('wheel', (ev: WheelEvent) => {
     camera.zoom = clamp(camera.zoom - (ev.deltaY * 0.01), ZOOM_MIN, ZOOM_MAX);
