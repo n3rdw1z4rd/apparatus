@@ -1,4 +1,4 @@
-import type { Camera } from "../camera";
+import type { Camera } from "../poc/camera";
 import type { Shape } from "../poc/components/shape";
 import type { Transform } from "../poc/components/transform";
 import type { Entity } from "./ecs";
@@ -66,9 +66,8 @@ export class CanvasRenderer {
         return false;
     }
 
-    clear(color: Color = 'black') {
-        this.context.fillStyle = color;
-        this.context.fillRect(0, 0, this.width, this.height);
+    clear() {
+        this.context.clearRect(0, 0, this.width, this.height);
     }
 
     screenToWorld(mouseX: number, mouseY: number, camera: Camera) {
@@ -143,12 +142,18 @@ export class CanvasRenderer {
             this.context.setLineDash(params.lineDash);
         }
 
+        this.context.beginPath();
+
         if (params.filled === true) {
             this.context.fillRect(x, y, width, height);
 
             if (params.strokeColor !== undefined) this.context.strokeRect(x, y, width, height);
         } else {
             this.context.strokeRect(x, y, width, height);
+        }
+
+        if (params.lineDash) {
+            this.context.setLineDash([]);
         }
     }
 
@@ -172,8 +177,12 @@ export class CanvasRenderer {
         this.context.beginPath();
         this.context.moveTo(x1, y1);
         this.context.lineTo(x2, y2);
-        this.context.closePath();
+        // this.context.closePath(); // TODO: do i need this?
         this.context.stroke();
+
+        if (params.lineDash) {
+            this.context.setLineDash([]);
+        }
     }
 
     drawCircle(x: number, y: number, radius: number, params: DrawParams = {}) {
@@ -191,6 +200,10 @@ export class CanvasRenderer {
         if (params.filled === true) this.context.fill();
 
         this.context.stroke();
+
+        if (params.lineDash) {
+            this.context.setLineDash([]);
+        }
     }
 
     drawText(x: number, y: number, text: string, params: DrawParams = {}) {

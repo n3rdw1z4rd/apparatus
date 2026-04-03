@@ -127,32 +127,18 @@ physics.on('loaded', () => {
     }
 
     physics.on('step', (data: any) => {
-        const bodies: Map<number, { x: number, y: number, rotation: number }> = new Map();
-
         for (let i = 0; i < data.length; i += 4) {
             const id = data[i];
             const x = data[i + 1];
             const y = data[i + 2];
             const rotation = data[i + 3];
 
-            bodies.set(id, { x, y, rotation });
-        }
+            const transform = ecs.getComponent<Transform>(id, C.Transform);
 
-        const entities = ecs.getEntitiesWith(C.Transform);
-
-        for (const e of entities) {
-            const body = bodies.get(e);
-
-            if (body) {
-                const transform = ecs.getComponent<Transform>(e, C.Transform);
-
-                if (transform) {
-                    const { x, y, rotation } = body;
-
-                    transform.x = x;
-                    transform.y = y;
-                    transform.rotation = rotation;
-                }
+            if (transform) {
+                transform.x = x;
+                transform.y = y;
+                transform.rotation = rotation;
             }
         }
     });
