@@ -3,7 +3,7 @@ import { RigidBody, World, type Vector } from "@dimforge/rapier2d";
 
 const INTERVAL_TIME = 1000 / 60;
 
-const post = (type: string, payload?: any) => self.postMessage({ type, payload });
+const post = (type: string, payload?: any, options?: WindowPostMessageOptions | undefined) => self.postMessage({ type, payload }, options);
 
 let isLoaded: boolean = false;
 let isRunning: boolean = false;
@@ -53,17 +53,23 @@ const run = () => {
                 intervalHandle = setInterval(() => {
                     world!.step();
 
-                    const bodyData: number[] = [];
+                    const bodyCount = world!.bodies.len();
+                    const buffer = new Float32Array(bodyCount * 4);
+
+                    let i = 0;
 
                     world!.bodies.forEach((body: RigidBody) => {
                         const { x, y } = body.translation();
                         const rotation = body.rotation();
+                        const id = bodies.get(body.handle) ?? -1;
 
-                        const id = bodies.get(body.handle);
-                        bodyData.push(id ?? -1, x, y, rotation);
+                        buffer[i++] = id;
+                        buffer[i++] = x;
+                        buffer[i++] = y;
+                        buffer[i++] = rotation;
                     });
 
-                    post('step', bodyData);
+                    post('step', buffer, { transfer: [buffer.buffer] });
                 }, INTERVAL_TIME);
 
                 isRunning = true;

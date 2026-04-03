@@ -126,7 +126,7 @@ physics.on('loaded', () => {
         lastToggle = pressed;
     }
 
-    physics.on('step', (data: any) => {
+    physics.on('step', (data: Float32Array) => {
         for (let i = 0; i < data.length; i += 4) {
             const id = data[i];
             const x = data[i + 1];
