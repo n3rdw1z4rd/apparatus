@@ -3,18 +3,10 @@
     "private": true,
     "version": "0.0.0",
     "type": "module",
-    "service": {
-        "port": 4004,
-        "host": "0.0.0.0"
-    },
     "scripts": {
         "dev": "vite",
         "build": "tsc -b && vite build",
-        "preview": "vite preview",
-        "podman-clean": "sudo podman rm -f apparatus && sudo podman images | grep apparatus | awk '{print $3}' | xargs -r sudo podman rmi",
-        "podman-build": "sudo podman build -t apparatus .",
-        "podman-run": "sudo podman run -d -p 4004:80 --restart always --name apparatus apparatus",
-        "podman-update": "npm run podman-clean && npm run podman-build && npm run podman-run"
+        "preview": "vite preview"
     },
     "dependencies": {
         "@dimforge/rapier2d": "^0.19.3"
