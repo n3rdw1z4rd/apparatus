@@ -9,5 +9,9 @@ export default defineConfig({
     worker: {
         format: 'es',
         plugins: () => [wasm()],
-    }
+    },
+    server: {
+        host: true,
+        allowedHosts: ['dev.n3rdw1z4rd.io'],
+    },
 });
