@@ -1,5 +1,5 @@
 import type { Camera } from "./camera";
-import type { CanvasRenderer } from "../lib/canvas-renderer";
+import type { CanvasRenderer } from "./lib/canvas-renderer";
 
 export const GRID_CELL_SIZE = 32;
 export const GRID_SIZE = GRID_CELL_SIZE * 1000;

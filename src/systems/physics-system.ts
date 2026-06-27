@@ -1,5 +1,5 @@
 import { C } from "../components";
-import { ECS } from "../../lib/ecs";
+import { ECS } from "../lib/ecs";
 
 export function physicsSystem(ecs: ECS) {
     const entities = ecs.getEntitiesWith(C.RigidBody, C.Transform);

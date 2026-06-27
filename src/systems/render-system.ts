@@ -1,8 +1,8 @@
 import { C } from "../components";
 import type { Shape } from "../components/shape";
 import type { Transform } from "../components/transform";
-import { ECS } from "../../lib/ecs";
-import type { CanvasRenderer } from "../../lib/canvas-renderer";
+import { ECS } from "../lib/ecs";
+import type { CanvasRenderer } from "../lib/canvas-renderer";
 import { GRID_CELL_SIZE } from "../grid";
 
 function drawShape(renderer: CanvasRenderer, transform: Transform, shape: Shape) {

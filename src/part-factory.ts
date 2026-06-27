@@ -1,7 +1,7 @@
-import type { ECS, Entity } from "../lib/ecs";
-import type { Color } from "../lib/canvas-renderer";
+import type { ECS, Entity } from "./lib/ecs";
+import type { Color } from "./lib/canvas-renderer";
 import { snapToGrid } from "./grid";
-import { C } from "../poc/components";
+import { C } from "./components";
 
 export function createBox(
     ecs: ECS,

@@ -1,6 +1,6 @@
 import type { Vector } from "@dimforge/rapier2d";
 import type RAPIER from "@dimforge/rapier2d";
-import type { RigidBodyComponent } from "../poc/components/rigidbody";
+import type { RigidBodyComponent } from "../components/rigidbody";
 
 export type Rapier = typeof RAPIER;
 

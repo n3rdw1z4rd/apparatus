@@ -1,6 +1,6 @@
-import type { Camera } from "../poc/camera";
-import type { Shape } from "../poc/components/shape";
-import type { Transform } from "../poc/components/transform";
+import type { Camera } from "../camera";
+import type { Shape } from "../components/shape";
+import type { Transform } from "../components/transform";
 import type { Entity } from "./ecs";
 
 export type Color = string | CanvasGradient | CanvasPattern;
