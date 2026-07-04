@@ -9,7 +9,8 @@
         "preview": "vite preview"
     },
     "dependencies": {
-        "@dimforge/rapier2d": "^0.19.3"
+        "@dimforge/rapier2d": "^0.19.3",
+        "@dimforge/rapier3d": "^0.19.3"
     },
     "devDependencies": {
         "@types/node": "^26.1.0",

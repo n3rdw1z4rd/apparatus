@@ -9,13 +9,8 @@ import { drawGrid, GRID_CELL_SIZE, snapToGrid } from "./grid";
 import { buildPickablesSystem } from "./systems/pickables-system";
 import { createBall, createBox } from "./part-factory";
 import { log } from "./lib/log";
-import { C } from "./components";
-import type { Shape } from "./components/shape";
-import type { Transform } from "./components/transform";
-import { PhysicsInterface } from "./physics-interface";
+import { PhysicsWorld } from "./physics-world";
 
-const GRAVITY_SCALE = 100;
-const GRAVITY = { x: 0, y: 9.81 * GRAVITY_SCALE };
 const BLOCK_SIZE = GRID_CELL_SIZE;
 
 function createInitialObjects(ecs: ECS, renderer: CanvasRenderer) {
@@ -69,31 +64,20 @@ function createInitialObjects(ecs: ECS, renderer: CanvasRenderer) {
     );
 }
 
-function serializeBodies(ecs: ECS) {
-    const bodies = [];
+const physics = new PhysicsWorld();
 
-    const entities = ecs.getEntitiesWith(C.Transform, C.Shape);
-
-    for (const id of entities) {
-        const transform = ecs.getComponent<Transform>(id, C.Transform);
-        const shape = ecs.getComponent<Shape>(id, C.Shape);
-
-        if (transform && shape) {
-            bodies.push({ id, transform, shape });
-        }
-    }
-
-    return bodies;
-}
-
-const physics = new PhysicsInterface();
-
-physics.on('info', (msg: string) => log('[physics] INFO:', msg));
-physics.on('warning', (msg: string) => log('[physics] WARNING:', msg));
+physics.on('log', (level: 'info' | 'warn' | 'error', msg: string) => log(`[physics] ${level.toUpperCase()}:`, msg));
 physics.on('error', (err: ErrorEvent) => log('[physics] ERROR:', err));
 
-physics.on('loaded', () => {
-    log('physics loaded')
+// NOTE: physics-worker.ts was rewritten for rapier3d with a new command
+// protocol (see physics-protocol.ts) - it no longer speaks the old 2D
+// play/stop message shape this file used to send. Wiring build-mode bodies
+// into the new addBody()/start() API is 3D game-mechanics work that hasn't
+// happened yet, so play mode is disabled here for now: it still toggles the
+// UI label, but doesn't touch the worker. Build mode (drag/pick on canvas)
+// is unaffected and still works standalone.
+physics.on('ready', () => {
+    log('physics ready')
     const ecs = new ECS();
     const input = new Input();
     const renderer = new CanvasRenderer();
@@ -113,35 +97,18 @@ physics.on('loaded', () => {
         if (pressed && !lastToggle) {
             mode = (mode === Mode.Build) ? Mode.Play : Mode.Build;
 
-            if (mode === Mode.Play) {
-                physics.postMessage('play', {
-                    gravity: GRAVITY,
-                    bodies: serializeBodies(ecs),
-                });
-            } else {
-                physics.postMessage('stop');
-            }
+            // TODO: drive physics.createWorld()/addBody()/start()/pause()
+            // here once there's a 3D body representation to send. For now
+            // this just flips the UI mode label.
         }
 
         lastToggle = pressed;
     }
 
-    physics.on('step', (data: Float32Array) => {
-        for (let i = 0; i < data.length; i += 4) {
-            const id = data[i];
-            const x = data[i + 1];
-            const y = data[i + 2];
-            const rotation = data[i + 3];
-
-            const transform = ecs.getComponent<Transform>(id, C.Transform);
-
-            if (transform) {
-                transform.x = x;
-                transform.y = y;
-                transform.rotation = rotation;
-            }
-        }
-    });
+    // Step buffer format is now [id, x, y, z, qx, qy, qz, qw] per body
+    // (physics-protocol.ts STEP_STRIDE) - nothing consumes it yet since no
+    // bodies are ever added to the worker in this file currently.
+    physics.on('step', (_data: Float32Array) => { });
 
     renderer.setAnimationLoop((_deltaTime: number, fps: number) => {
         handleModeToggle(input);
