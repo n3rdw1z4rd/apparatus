@@ -12,9 +12,12 @@
         "@dimforge/rapier2d": "^0.19.3"
     },
     "devDependencies": {
-        "@types/node": "^26.0.1",
+        "@types/node": "^26.1.0",
         "typescript": "^6.0.2",
-        "vite": "^8.1.0",
+        "vite": "^8.1.3",
         "vite-plugin-wasm": "^3.6.0"
+    },
+    "allowScripts": {
+        "fsevents@2.3.3": true
     }
 }
