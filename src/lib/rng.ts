@@ -1,3 +1,5 @@
+import { imul } from './math';
+
 export class Rng {
     private __seed: number;
     private _seed: number;
@@ -32,9 +34,9 @@ export class Rng {
         this._seed = (this._seed + 0x9e3779b9) | 0;
 
         let t: number = this._seed ^ (this._seed >>> 16);
-        t = Math.imul(t, 0x21f0aaad);
+        t = imul(t, 0x21f0aaad);
         t = t ^ (t >>> 15);
-        t = Math.imul(t, 0x735a2d97);
+        t = imul(t, 0x735a2d97);
 
         return ((t = t ^ (t >>> 15)) >>> 0) / 4294967296;
     }
@@ -52,9 +54,18 @@ export class Rng {
         return (min + this.nextf * (max - min)) | 0;
     }
 
-    public choose(...args: any): any {
-        args = args.flat(Infinity);
-        return args[this.range(args.length - 1)];
+    public choose(...args: any[]): any {
+        if (args.length === 1) {
+            if (Array.isArray(args[0])) {
+                return args[0][this.range(args[0].length - 1)];
+            } else if (typeof args[0] === 'string') {
+                return args[0].charAt(this.range(args[0].length - 1));
+            } else {
+                return args[0];
+            }
+        } else {
+            return args[this.range(args.length - 1)];
+        }
     }
 
     public shuffle(value: Array<any> | string): Array<any> | string {
@@ -87,56 +98,6 @@ export class Rng {
         }
 
         return rows;
-    }
-
-    public randomUnitVector(): [number, number] {
-        const theta = rng.nextf * 2 * Math.PI;
-        return [Math.cos(theta), Math.sin(theta)];
-    }
-
-    public pointInUnitCircle(radius: number = 1, floored: boolean = false): [x: number, y: number] {
-        const theta = this.nextf * 2 * Math.PI;
-        const r = Math.sqrt(this.nextf) * radius;
-        const x = r * Math.cos(theta);
-        const y = r * Math.sin(theta);
-        return !floored ? [x, y] : [Math.floor(x), Math.floor(y)];
-    }
-
-    public pointInUnitSphere(radius: number = 1, floored: boolean = false): [x: number, y: number, z: number] {
-        var u = this.nextf;
-        var v = this.nextf;
-
-        var theta = u * 2.0 * Math.PI;
-        var phi = Math.acos(2.0 * v - 1.0);
-
-        var r = radius * Math.cbrt(rng.nextf);
-
-        var sinTheta = Math.sin(theta);
-        var cosTheta = Math.cos(theta);
-
-        var sinPhi = Math.sin(phi);
-        var cosPhi = Math.cos(phi);
-
-        var x = r * sinPhi * cosTheta;
-        var y = r * sinPhi * sinTheta;
-        var z = r * cosPhi;
-
-        return !floored ? [x, y, z] : [Math.floor(x), Math.floor(y), Math.floor(z)];
-    }
-
-    public parkMillerNormal(): number {
-        const mean = 1 / 2;
-        const stddev = 1 / 6;
-
-        let u = 0;
-        let v = 0;
-
-        while (u === 0) u = this.nextf;
-        while (v === 0) v = this.nextf;
-
-        const n = Math.sqrt(-2.0 * Math.log(u)) * Math.cos(2.0 * Math.PI * v);
-
-        return n * stddev + mean;
     }
 }
 

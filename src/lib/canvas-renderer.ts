@@ -2,6 +2,7 @@ import type { Camera } from "../camera";
 import type { Shape } from "../components/shape";
 import type { Transform } from "../components/transform";
 import type { Entity } from "./ecs";
+import { abs, cos, PI, sin } from "./math";
 
 export type Color = string | CanvasGradient | CanvasPattern;
 
@@ -94,11 +95,11 @@ export class CanvasRenderer {
             const dx = world.x - p.transform.x;
             const dy = world.y - p.transform.y;
 
-            const cos = Math.cos(-p.transform.rotation);
-            const sin = Math.sin(-p.transform.rotation);
+            const c = cos(-p.transform.rotation);
+            const s = sin(-p.transform.rotation);
 
-            const localX = dx * cos - dy * sin;
-            const localY = dx * sin + dy * cos;
+            const localX = dx * c - dy * s;
+            const localY = dx * s + dy * c;
 
             switch (p.shape.type) {
                 case 'rectangle':
@@ -158,7 +159,7 @@ export class CanvasRenderer {
     }
 
     drawPixel(x: number, y: number, params: DrawParams = {}) {
-        const size = Math.abs(params.size || 1);
+        const size = abs(params.size || 1);
 
         this.drawRect(x, y, size, size, {
             ...params,
@@ -195,7 +196,7 @@ export class CanvasRenderer {
         }
 
         this.context.beginPath();
-        this.context.arc(x, y, radius, 0, 2 * Math.PI);
+        this.context.arc(x, y, radius, 0, 2 * PI);
 
         if (params.filled === true) this.context.fill();
 

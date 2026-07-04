@@ -1,11 +1,12 @@
 import type { Camera } from "./camera";
 import type { CanvasRenderer } from "./lib/canvas-renderer";
+import { ceil, floor, round } from "./lib/math";
 
 export const GRID_CELL_SIZE = 32;
 export const GRID_SIZE = GRID_CELL_SIZE * 1000;
 
 export function snapToGrid(value: number, gridSize: number = GRID_CELL_SIZE): number {
-    return Math.round(value / gridSize) * gridSize;
+    return round(value / gridSize) * gridSize;
 }
 
 export function drawGrid(
@@ -19,11 +20,11 @@ export function drawGrid(
     const width = renderer.width / camera.zoom;
     const height = renderer.height / camera.zoom;
 
-    const startX = Math.floor((camera.x - width / 2) / cellSize) * cellSize;
-    const endX = Math.ceil((camera.x + width / 2) / cellSize) * cellSize;
+    const startX = floor((camera.x - width / 2) / cellSize) * cellSize;
+    const endX = ceil((camera.x + width / 2) / cellSize) * cellSize;
 
-    const startY = Math.floor((camera.y - height / 2) / cellSize) * cellSize;
-    const endY = Math.ceil((camera.y + height / 2) / cellSize) * cellSize;
+    const startY = floor((camera.y - height / 2) / cellSize) * cellSize;
+    const endY = ceil((camera.y + height / 2) / cellSize) * cellSize;
 
     ctx.strokeStyle = color;
     ctx.lineWidth = 1;
