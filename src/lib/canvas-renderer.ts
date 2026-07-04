@@ -2,7 +2,7 @@ import type { Camera } from "../camera";
 import type { Shape } from "../components/shape";
 import type { Transform } from "../components/transform";
 import type { Entity } from "./ecs";
-import { abs, cos, PI, sin } from "./math";
+import { abs, cos, PI, sin } from "@n3rdw1z4rd/core";
 
 export type Color = string | CanvasGradient | CanvasPattern;
 

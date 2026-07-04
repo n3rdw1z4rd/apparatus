@@ -1,4 +1,4 @@
-import { Emitter } from "./lib/emitter";
+import { Emitter } from "@n3rdw1z4rd/core";
 import type {
     BodyDesc,
     JointDesc,

@@ -1,6 +1,6 @@
 import type { Camera } from "./camera";
 import type { CanvasRenderer } from "./lib/canvas-renderer";
-import { ceil, floor, round } from "./lib/math";
+import { ceil, floor, round } from "@n3rdw1z4rd/core";
 
 export const GRID_CELL_SIZE = 32;
 export const GRID_SIZE = GRID_CELL_SIZE * 1000;

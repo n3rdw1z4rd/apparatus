@@ -8,7 +8,7 @@ import { dragSystem } from "./systems/drag-system";
 import { drawGrid, GRID_CELL_SIZE, snapToGrid } from "./grid";
 import { buildPickablesSystem } from "./systems/pickables-system";
 import { createBall, createBox } from "./part-factory";
-import { log } from "./lib/log";
+import { loginf, logwrn, logerr } from "@n3rdw1z4rd/core";
 import { PhysicsWorld } from "./physics-world";
 
 const BLOCK_SIZE = GRID_CELL_SIZE;
@@ -66,8 +66,12 @@ function createInitialObjects(ecs: ECS, renderer: CanvasRenderer) {
 
 const physics = new PhysicsWorld();
 
-physics.on('log', (level: 'info' | 'warn' | 'error', msg: string) => log(`[physics] ${level.toUpperCase()}:`, msg));
-physics.on('error', (err: ErrorEvent) => log('[physics] ERROR:', err));
+physics.on('log', (level: 'info' | 'warn' | 'error', msg: string) => {
+    const fn = level === 'error' ? logerr : level === 'warn' ? logwrn : loginf;
+    fn('[physics]', msg);
+});
+
+physics.on('error', (err: ErrorEvent) => logerr('[physics] ERROR:', err));
 
 // NOTE: physics-worker.ts was rewritten for rapier3d with a new command
 // protocol (see physics-protocol.ts) - it no longer speaks the old 2D
@@ -77,7 +81,7 @@ physics.on('error', (err: ErrorEvent) => log('[physics] ERROR:', err));
 // UI label, but doesn't touch the worker. Build mode (drag/pick on canvas)
 // is unaffected and still works standalone.
 physics.on('ready', () => {
-    log('physics ready')
+    loginf('physics ready')
     const ecs = new ECS();
     const input = new Input();
     const renderer = new CanvasRenderer();

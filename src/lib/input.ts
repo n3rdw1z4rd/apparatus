@@ -1,4 +1,4 @@
-import { Emitter } from "./emitter";
+import { Emitter } from "@n3rdw1z4rd/core";
 
 export class Input extends Emitter {
     keys = new Set<string>();

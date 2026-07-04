@@ -10,7 +10,8 @@
     },
     "dependencies": {
         "@dimforge/rapier2d": "^0.19.3",
-        "@dimforge/rapier3d": "^0.19.3"
+        "@dimforge/rapier3d": "^0.19.3",
+        "@n3rdw1z4rd/core": "file:../core"
     },
     "devDependencies": {
         "@types/node": "^26.1.0",
