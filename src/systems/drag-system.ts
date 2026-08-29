@@ -1,61 +1,68 @@
-import { ECS } from "../lib/ecs";
+import { CanvasRenderer, ECS, Input } from "@n3rdw1z4rd/core";
+import { screenToWorld } from "../mouse";
 import { snapToGrid } from "../grid";
 import type { Camera } from "../camera";
-import type { CanvasRenderer } from "../lib/canvas-renderer";
-import type { Input } from "../lib/input";
+import { Drag } from "../components/drag";
+import { Transform } from "../components/transform";
 
 export function dragSystem(ecs: ECS, input: Input, renderer: CanvasRenderer, camera: Camera) {
-    const mouseX = input.mouseX;
-    const mouseY = input.mouseY;
+    const mouseX = input.pointerPosition.x;
+    const mouseY = input.pointerPosition.y;
 
-    const mouse = renderer.screenToWorld(mouseX, mouseY, camera);
+    const mouse = screenToWorld(mouseX, mouseY, renderer, camera);
 
-    const pickedEntity = (input.mousePressed && !ecs.getEntitiesWith("Drag").length)
-        ? renderer.pick(mouseX, mouseY, camera)
-        : null;
+    // const pickedEntity = (input.isDown('Button0') && !ecs.getEntitiesWithComponents("Drag").length)
+    //     ? renderer.pick(mouseX, mouseY, camera)
+    //     : null;
+    const pickedEntity = null;
 
     if (pickedEntity !== null) {
-        const transform = ecs.getComponent<any>(pickedEntity, "Transform");
+        const transform = ecs.getComponent<Transform>(pickedEntity, "Transform");
 
-        ecs.addComponent(pickedEntity, "Drag", {
-            offsetX: mouse.x - transform.x,
-            offsetY: mouse.y - transform.y,
-        });
+        if (transform) {
+            ecs.addComponent(pickedEntity, "Drag", {
+                offsetX: mouse.x - transform.x,
+                offsetY: mouse.y - transform.y,
+            });
+        }
     }
 
-    if (!input.mouseDown) {
-        const dragging = ecs.getEntitiesWith("Drag");
+    if (!input.isDown('Button0')) {
+        const dragging = ecs.getEntitiesWithComponents("Drag");
 
         for (const e of dragging) {
             ecs.removeComponent(e, "Drag");
         }
     }
 
-    const dragging = ecs.getEntitiesWith("Drag");
+    const dragging = ecs.getEntitiesWithComponents("Drag");
 
     for (const e of dragging) {
-        const drag = ecs.getComponent<any>(e, "Drag");
-        // const rigidbody = ecs.getComponent<any>(e, "RigidBody");
-        const transform = ecs.getComponent<any>(e, "Transform");
-        // const renderRect = ecs.getComponent<any>(e, "RenderRect");
+        const drag = ecs.getComponent<Drag>(e, "Drag"); // e.components.get("Drag");
+        const transform = ecs.getComponent<Transform>(e, "Transform"); // e.components.get("Transform");
 
-        const mouse = renderer.screenToWorld(mouseX, mouseY, camera);
+        if (drag && transform) {
+            const mouse = screenToWorld(mouseX, mouseY, renderer, camera);
 
-        transform.x = snapToGrid(mouse.x - drag.offsetX);
-        transform.y = snapToGrid(mouse.y - drag.offsetY);
+            transform.x = snapToGrid(mouse.x - drag.offsetX);
+            transform.y = snapToGrid(mouse.y - drag.offsetY);
 
-        // const localAnchors = getEntityAnchors(renderRect.width, renderRect.height);
+            // const rigidbody = ecs.getComponent<any>(e, "RigidBody");
+            // const renderRect = ecs.getComponent<any>(e, "RenderRect");
 
-        // const worldAnchors = localAnchors.map(a => ({
-        //     x: transform.x + a.x,
-        //     y: transform.y + a.y,
-        // }));
+            // const localAnchors = getEntityAnchors(renderRect.width, renderRect.height);
 
-        // const snapped = snapToAnchors(transform.x, transform.y, worldAnchors);
+            // const worldAnchors = localAnchors.map(a => ({
+            //     x: transform.x + a.x,
+            //     y: transform.y + a.y,
+            // }));
 
-        // transform.x = snap(snapped.x);
-        // transform.y = snap(snapped.y);
+            // const snapped = snapToAnchors(transform.x, transform.y, worldAnchors);
 
-        // rigidbody.body.setTranslation({ x: transform.x, y: transform.y }, true);
+            // transform.x = snap(snapped.x);
+            // transform.y = snap(snapped.y);
+
+            // rigidbody.body.setTranslation({ x: transform.x, y: transform.y }, true);
+        }
     }
 }

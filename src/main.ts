@@ -1,14 +1,11 @@
 import { Camera } from "./camera";
-import { Input } from "./lib/input";
-import { CanvasRenderer } from "./lib/canvas-renderer";
-import { ECS } from "./lib/ecs";
 import { renderSystem } from "./systems/render-system";
 import { Mode } from "./mode";
 import { dragSystem } from "./systems/drag-system";
 import { drawGrid, GRID_CELL_SIZE, snapToGrid } from "./grid";
 import { buildPickablesSystem } from "./systems/pickables-system";
 import { createBall, createBox } from "./part-factory";
-import { loginf, logwrn, logerr } from "@n3rdw1z4rd/core";
+import { loginf, logwrn, logerr, ECS, CanvasRenderer, Input, Clock } from "@n3rdw1z4rd/core";
 import { PhysicsWorld } from "./physics-world";
 
 const BLOCK_SIZE = GRID_CELL_SIZE;
@@ -114,7 +111,7 @@ physics.on('ready', () => {
     // bodies are ever added to the worker in this file currently.
     physics.on('step', (_data: Float32Array) => { });
 
-    renderer.setAnimationLoop((_deltaTime: number, fps: number) => {
+    const clock = new Clock().start().on('frame', (deltaTime: number) => {
         handleModeToggle(input);
 
         renderer.clear();
@@ -152,7 +149,7 @@ physics.on('ready', () => {
             color: 'white',
         });
 
-        renderer.drawText(renderer.width - 60, 10, `fps:${fps}`);
+        renderer.drawText(renderer.width - 60, 10, `fps:${clock.fps}`);
 
         if (mode === Mode.Build) {
             renderer.drawText(10, 50, 'Mouse: move stuff!', {
