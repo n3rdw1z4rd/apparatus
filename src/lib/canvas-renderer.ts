@@ -1,141 +1,113 @@
-import type { Camera } from "../camera";
-import type { Shape } from "../components/shape";
-import type { Transform } from "../components/transform";
-import type { Entity } from "./ecs";
+import { Vector } from './vector';
+import { clamp, PI, TAU } from './math';
+import { Observable } from '@n3rdw1z4rd/smoke-ui';
 
-export type Color = string | CanvasGradient | CanvasPattern;
+export type CanvasColor = string | CanvasGradient | CanvasPattern;
+
+export const DEFAULT_COLOR: CanvasColor = 'white';
+export const DEFAULT_PIXEL_SIZE: number = 1;
+
+export const DEFAULT_FONT_SIZE = 14;
+export const DEFAULT_FONT_NAME = 'monospace';
+export const DEFAULT_FONT = `${DEFAULT_FONT_SIZE}px ${DEFAULT_FONT_NAME}`;
+export const DEFAULT_TEXTALIGN = 'left';
+export const DEFAULT_TEXTBASELINE = 'alphabetic';
 
 export interface DrawParams {
-    color?: Color,
-    strokeColor?: Color,
-    fillColor?: Color,
+    color?: CanvasColor,
     filled?: boolean,
     size?: number,
-    fontName?: string,
+    lineDash?: number[],
     textAlign?: CanvasTextAlign,
     textBaseline?: CanvasTextBaseline,
-    lineDash?: number[],
+    font?: string,
+    fontName?: string,
 }
 
-type Pickable = {
-    entity: number,
-    transform: Transform,
-    shape: Shape,
-};
+export interface SpriteParams extends DrawParams {
+    sourceX?: number,
+    sourceY?: number,
+    sourceWidth?: number,
+    sourceHeight?: number,
+}
 
 export class CanvasRenderer {
-    canvas: HTMLCanvasElement;
+    readonly onResized = new Observable();
+
     context: CanvasRenderingContext2D;
 
-    drawCentered: boolean = true;
-
-    private pickables: Pickable[] = [];
-
-    get width(): number { return this.context.canvas.width; }
-    get height(): number { return this.context.canvas.height; }
+    get canvas(): HTMLCanvasElement { return this.context.canvas; }
+    get width(): number { return this.canvas.width; }
+    get height(): number { return this.canvas.height; }
 
     constructor(canvas?: HTMLCanvasElement) {
-        this.canvas = canvas ?? document.createElement('canvas');
-        this.context = this.canvas.getContext('2d')!;
+        this.context = (canvas ?? document.createElement('canvas'))
+            .getContext('2d')!;
+
+        this.context.font = DEFAULT_FONT;
+        this.context.textAlign = DEFAULT_TEXTALIGN;
+        this.context.textBaseline = DEFAULT_TEXTBASELINE;
     }
 
-    appendTo(target: HTMLElement): void {
-        if (this.canvas.parentNode) {
-            this.canvas.parentNode.removeChild(this.canvas);
+    resize(width?: number, height?: number) {
+        width = width ?? this.canvas.parentElement?.clientWidth ?? this.width;
+        height = height ?? this.canvas.parentElement?.clientHeight ?? this.height;
+
+        if (this.canvas.width != width || this.canvas.height != height) {
+            this.canvas.width = width;
+            this.canvas.height = height;
+
+            this.onResized.notify(width, height);
         }
-
-        target.appendChild(this.canvas);
-    }
-
-    resize(displayWidth?: number, displayHeight?: number): boolean {
-        const { width, height } = (
-            this.canvas.parentElement?.getBoundingClientRect() ??
-            this.canvas.getBoundingClientRect()
-        );
-
-        displayWidth = (0 | (displayWidth ?? width));
-        displayHeight = (0 | (displayHeight ?? height));
-
-        if (this.canvas.width !== displayWidth || this.canvas.height !== displayHeight) {
-            this.canvas.width = displayWidth
-            this.canvas.height = displayHeight;
-
-            return true;
-        }
-
-        return false;
     }
 
     clear() {
         this.context.clearRect(0, 0, this.width, this.height);
     }
 
-    screenToWorld(mouseX: number, mouseY: number, camera: Camera) {
-        return {
-            x: (mouseX - this.width / 2) / camera.zoom + camera.x,
-            y: (mouseY - this.height / 2) / camera.zoom + camera.y,
-        };
+    render(callback: () => void, position?: Vector, scale: number = 1) {
+        position = position ?? new Vector();
+
+        this.clear();
+        this.context.save();
+
+        this.context.translate(this.width / 2, this.height / 2);
+        this.context.scale(scale, scale);
+        this.context.translate(-position.x, -position.y);
+
+        callback();
+
+        this.context.restore();
     }
 
-    registerPickable(p: Pickable) {
-        this.pickables.push(p);
-    }
+    private drawPath(buildPath: () => void, params: DrawParams = {}) {
+        this.context.fillStyle = params.color ?? DEFAULT_COLOR;
+        this.context.strokeStyle = params.color ?? DEFAULT_COLOR;
+        this.context.lineWidth = params.size ?? 1;
 
-    clearPickables() {
-        this.pickables.length = 0;
-    }
-
-    pick(mouseX: number, mouseY: number, camera: Camera): Entity | null {
-        const world = this.screenToWorld(mouseX, mouseY, camera);
-
-        for (let i = this.pickables.length - 1; i >= 0; i--) {
-            const p = this.pickables[i];
-
-            const dx = world.x - p.transform.x;
-            const dy = world.y - p.transform.y;
-
-            const cos = Math.cos(-p.transform.rotation);
-            const sin = Math.sin(-p.transform.rotation);
-
-            const localX = dx * cos - dy * sin;
-            const localY = dx * sin + dy * cos;
-
-            switch (p.shape.type) {
-                case 'rectangle':
-                    if (
-                        localX >= -p.shape.width / 2 &&
-                        localX <= p.shape.width / 2 &&
-                        localY >= -p.shape.height / 2 &&
-                        localY <= p.shape.height / 2
-                    ) {
-                        return p.entity;
-                    }
-
-                    break;
-
-                case 'circle':
-                    if ((dx * dx + dy * dy) <= p.shape.radius * p.shape.radius) {
-                        return p.entity;
-                    }
-
-                    break;
-
-                default: break;
-            }
-
+        if (params.lineDash) {
+            this.context.setLineDash(params.lineDash);
         }
 
-        return null;
+        this.context.beginPath();
+        buildPath();
+        this.context.stroke();
+
+        if (params.filled) {
+            this.context.fill();
+        }
+
+        if (params.lineDash) {
+            this.context.setLineDash([]);
+        }
     }
 
     drawRect(x: number, y: number, width: number, height: number, params: DrawParams = {}) {
-        if (this.drawCentered) {
-            x -= (width / 2);
-            y -= (height / 2);
-        }
+        x -= (width / 2);
+        y -= (height / 2);
 
-        this.context.strokeStyle = params.strokeColor ?? params.color ?? 'white';
-        this.context.fillStyle = params.fillColor ?? params.color ?? 'white';
+        this.context.fillStyle = params.color ?? DEFAULT_COLOR;
+        this.context.strokeStyle = params.color ?? DEFAULT_COLOR;
         this.context.lineWidth = params.size ?? 1;
 
         if (params.lineDash) {
@@ -144,12 +116,10 @@ export class CanvasRenderer {
 
         this.context.beginPath();
 
-        if (params.filled === true) {
-            this.context.fillRect(x, y, width, height);
+        this.context.strokeRect(x, y, width, height);
 
-            if (params.strokeColor !== undefined) this.context.strokeRect(x, y, width, height);
-        } else {
-            this.context.strokeRect(x, y, width, height);
+        if (params.filled) {
+            this.context.fillRect(x, y, width, height);
         }
 
         if (params.lineDash) {
@@ -158,7 +128,7 @@ export class CanvasRenderer {
     }
 
     drawPixel(x: number, y: number, params: DrawParams = {}) {
-        const size = Math.abs(params.size || 1);
+        const size = Math.abs(params.size || DEFAULT_PIXEL_SIZE);
 
         this.drawRect(x, y, size, size, {
             ...params,
@@ -167,7 +137,7 @@ export class CanvasRenderer {
     }
 
     drawLine(x1: number, y1: number, x2: number, y2: number, params: DrawParams = {}) {
-        this.context.strokeStyle = params.color ?? 'white';
+        this.context.strokeStyle = params.color ?? DEFAULT_COLOR;
         this.context.lineWidth = params.size ?? 1;
 
         if (params.lineDash) {
@@ -177,7 +147,6 @@ export class CanvasRenderer {
         this.context.beginPath();
         this.context.moveTo(x1, y1);
         this.context.lineTo(x2, y2);
-        // this.context.closePath(); // TODO: do i need this?
         this.context.stroke();
 
         if (params.lineDash) {
@@ -186,69 +155,70 @@ export class CanvasRenderer {
     }
 
     drawCircle(x: number, y: number, radius: number, params: DrawParams = {}) {
-        this.context.strokeStyle = params.strokeColor ?? params.color ?? 'white';
-        this.context.fillStyle = params.fillColor ?? params.color ?? 'white';
-        this.context.lineWidth = params.size ?? 1;
+        this.drawPath(() => {
+            this.context.arc(x, y, radius, 0, TAU);
+        }, params);
+    }
 
-        if (params.lineDash) {
-            this.context.setLineDash(params.lineDash);
-        }
+    drawPolygon(
+        x: number,
+        y: number,
+        radius: number,
+        sides: number,
+        params: DrawParams = {}
+    ) {
+        sides = Math.floor(clamp(sides, 3, 36));
 
-        this.context.beginPath();
-        this.context.arc(x, y, radius, 0, 2 * Math.PI);
+        this.drawPath(() => {
+            for (let i = 0; i < sides; i++) {
+                const angle = (i / sides) * TAU - PI / 2;
 
-        if (params.filled === true) this.context.fill();
+                const px = x + Math.cos(angle) * radius;
+                const py = y + Math.sin(angle) * radius;
 
-        this.context.stroke();
+                if (i === 0) {
+                    this.context.moveTo(px, py);
+                } else {
+                    this.context.lineTo(px, py);
+                }
+            }
 
-        if (params.lineDash) {
-            this.context.setLineDash([]);
-        }
+            this.context.closePath();
+        }, params);
     }
 
     drawText(x: number, y: number, text: string, params: DrawParams = {}) {
-        this.context.font = `${params.size ?? 14}px ${params.fontName ?? 'monospace'}`;
-        this.context.textAlign = params.textAlign ?? 'left';
-        this.context.textBaseline = params.textBaseline ?? 'alphabetic';
-        this.context.fillStyle = params.color ?? 'white';
+        this.context.font = params.font ??
+            `${params.size ?? DEFAULT_FONT_SIZE}px ${params.fontName ?? DEFAULT_FONT_NAME}`;
 
+        this.context.textAlign = params.textAlign ?? DEFAULT_TEXTALIGN;
+        this.context.textBaseline = params.textBaseline ?? DEFAULT_TEXTBASELINE;
+        this.context.fillStyle = params.color ?? DEFAULT_COLOR;
         this.context.fillText(text, x, y);
     }
 
-    private _animationId: number = 0;
-    private _isRunning: boolean = false;
-    private _lastTime: number = 0;
-    private _frameTime: number = 0;
-    private _frameCount: number = 0;
-    private _fps: number = 0;
+    drawSprite(
+        x: number,
+        y: number,
+        image: CanvasImageSource,
+        width: number,
+        height: number,
+        params: SpriteParams = {}
+    ) {
+        x -= (width / 2);
+        y -= (height / 2);
 
-    setAnimationLoop(callback: (deltaTime: number, fps: number) => void) {
-        if (!this._isRunning) {
-            const update = (time: DOMHighResTimeStamp = 0) => {
-                const deltaTime = (time - this._lastTime) / 1000;
-                this._lastTime = time;
-
-                if (this._frameTime + 1000 >= time) {
-                    this._frameCount += 1;
-                } else {
-                    this._frameTime = time;
-                    this._fps = this._frameCount;
-                    this._frameCount = 0;
-                }
-
-                callback(deltaTime, this._fps);
-
-                this._animationId = requestAnimationFrame(update);
-            };
-
-            update();
-            this._isRunning = true;
-        }
-    }
-
-    stopAnimationLoop() {
-        if (this._isRunning) {
-            cancelAnimationFrame(this._animationId);
+        if (params.sourceWidth !== undefined && params.sourceHeight !== undefined) {
+            this.context.drawImage(
+                image,
+                params.sourceX ?? 0,
+                params.sourceY ?? 0,
+                params.sourceWidth,
+                params.sourceHeight,
+                x, y, width, height,
+            );
+        } else {
+            this.context.drawImage(image, x, y, width, height);
         }
     }
 }

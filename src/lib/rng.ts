@@ -1,143 +1,181 @@
+import { Random } from "./random";
+import { TAU } from "./math";
+
 export class Rng {
-    private __seed: number;
-    private _seed: number;
+    readonly random: Random;
 
-    private _uid_characters: string =
-        '0123456789abcdefghijklmnopqrstuvwxyzABCDEFGHIJKLMNOPQRSTUVWXYZ';
+    get seed(): number { return this.random.seed; }
+    set seed(seed: number) { this.random.seed = seed; }
 
-    constructor() {
-        this._seed = Date.now();
-        this.__seed = this._seed;
-        this._uid_characters = this.shuffle(this._uid_characters) as string;
-
-        this.seed = this.nexti;
+    constructor(seed?: number | Random) {
+        this.random =
+            seed instanceof Random
+                ? seed
+                : new Random(seed);
     }
 
-    public get seed(): number {
-        return this._seed;
+    nextFloat(): number {
+        return this.random.float();
     }
 
-    public set seed(value: number) {
-        this._seed = value;
-        this.__seed = this._seed;
+    nextUint(): number {
+        return this.random.uint();
     }
 
-    public get startingSeed(): number {
-        return this.__seed;
-    }
-
-    public get nextf(): number {
-        // adapted from: https://github.com/bryc/code/blob/master/jshash/PRNGs.md#splitmix32
-        this._seed |= 0;
-        this._seed = (this._seed + 0x9e3779b9) | 0;
-
-        let t: number = this._seed ^ (this._seed >>> 16);
-        t = Math.imul(t, 0x21f0aaad);
-        t = t ^ (t >>> 15);
-        t = Math.imul(t, 0x735a2d97);
-
-        return ((t = t ^ (t >>> 15)) >>> 0) / 4294967296;
-    }
-
-    public get nexti(): number {
-        return (this.nextf * Number.MAX_SAFE_INTEGER) | 0;
-    }
-
-    public range(min: number, max?: number): number {
-        if (max === undefined) {
+    floatRange(min: number, max?: number): number {
+        if (typeof max !== 'number') {
             max = min;
             min = 0;
         }
 
-        return (min + this.nextf * (max - min)) | 0;
+        return min + this.random.float() * (max - min);
     }
 
-    public choose(...args: any): any {
-        args = args.flat(Infinity);
-        return args[this.range(args.length - 1)];
-    }
-
-    public shuffle(value: Array<any> | string): Array<any> | string {
-        return Array.isArray(value)
-            ? value.sort((_a, _b) => 0.5 - this.nextf)
-            : value
-                .split('')
-                .sort((_a, _b) => 0.5 - this.nextf)
-                .join('');
-    }
-
-    public uid(length: number = 16): string {
-        const uid: string[] = [];
-        for (let i = 0; i < length; i++)
-            uid.push(this.choose(this._uid_characters));
-        return uid.join('');
-    }
-
-    public randomMatrix(size: number): number[][] {
-        const rows: number[][] = [];
-
-        for (let i = 0; i < size; i++) {
-            const row: number[] = [];
-
-            for (let j = 0; j < size; j++) {
-                row.push(this.nextf * 2 - 1);
-            }
-
-            rows.push(row);
+    range(min: number, max?: number): number {
+        if (typeof max !== 'number') {
+            max = min;
+            min = 0;
         }
 
-        return rows;
+        return Math.floor(this.floatRange(min, max));
     }
 
-    public randomUnitVector(): [number, number] {
-        const theta = rng.nextf * 2 * Math.PI;
-        return [Math.cos(theta), Math.sin(theta)];
+    pick<T>(array: readonly T[]): T {
+        return array[this.range(0, array.length - 1)];
     }
 
-    public pointInUnitCircle(radius: number = 1, floored: boolean = false): [x: number, y: number] {
-        const theta = this.nextf * 2 * Math.PI;
-        const r = Math.sqrt(this.nextf) * radius;
-        const x = r * Math.cos(theta);
-        const y = r * Math.sin(theta);
-        return !floored ? [x, y] : [Math.floor(x), Math.floor(y)];
+    sample<T>(
+        array: readonly T[],
+        count: number,
+    ): T[] {
+        return this.shuffle(array).slice(0, count);
     }
 
-    public pointInUnitSphere(radius: number = 1, floored: boolean = false): [x: number, y: number, z: number] {
-        var u = this.nextf;
-        var v = this.nextf;
+    shuffle<T>(array: readonly T[]): T[] {
+        const result = [...array];
 
-        var theta = u * 2.0 * Math.PI;
-        var phi = Math.acos(2.0 * v - 1.0);
+        for (let i = result.length - 1; i > 0; --i) {
+            const j = this.range(0, i);
 
-        var r = radius * Math.cbrt(rng.nextf);
+            [result[i], result[j]] =
+                [result[j], result[i]];
+        }
 
-        var sinTheta = Math.sin(theta);
-        var cosTheta = Math.cos(theta);
-
-        var sinPhi = Math.sin(phi);
-        var cosPhi = Math.cos(phi);
-
-        var x = r * sinPhi * cosTheta;
-        var y = r * sinPhi * sinTheta;
-        var z = r * cosPhi;
-
-        return !floored ? [x, y, z] : [Math.floor(x), Math.floor(y), Math.floor(z)];
+        return result;
     }
 
-    public parkMillerNormal(): number {
-        const mean = 1 / 2;
-        const stddev = 1 / 6;
+    chance(probability: number): boolean {
+        return this.random.float() < probability;
+    }
+
+    vector2(): [number, number] {
+        const θ = this.random.angle();
+
+        return [
+            Math.cos(θ),
+            Math.sin(θ),
+        ];
+    }
+
+    pointOnCircle(radius = 1): [number, number] {
+        const θ = this.random.angle();
+
+        return [
+            radius * Math.cos(θ),
+            radius * Math.sin(θ),
+        ];
+    }
+
+    pointInCircle(radius = 1): [number, number] {
+        const θ = this.random.angle();
+        const r = Math.sqrt(this.random.float()) * radius;
+
+        return [
+            r * Math.cos(θ),
+            r * Math.sin(θ),
+        ];
+    }
+
+    pointOnSphere(radius = 1): [number, number, number] {
+        const u = this.random.float();
+        const v = this.random.float();
+
+        const θ = TAU * u;
+        const φ = Math.acos(2 * v - 1);
+
+        const s = Math.sin(φ);
+
+        return [
+            radius * s * Math.cos(θ),
+            radius * s * Math.sin(θ),
+            radius * Math.cos(φ),
+        ];
+    }
+
+    pointInSphere(radius = 1): [number, number, number] {
+        const u = this.random.float();
+        const v = this.random.float();
+
+        const θ = TAU * u;
+        const φ = Math.acos(2 * v - 1);
+
+        const r = radius * Math.cbrt(this.random.float());
+        const s = Math.sin(φ);
+
+        return [
+            r * s * Math.cos(θ),
+            r * s * Math.sin(θ),
+            r * Math.cos(φ),
+        ];
+    }
+
+    gaussian(
+        mean = 0,
+        standardDeviation = 1,
+    ): number {
 
         let u = 0;
         let v = 0;
 
-        while (u === 0) u = this.nextf;
-        while (v === 0) v = this.nextf;
+        while (u === 0) u = this.random.float();
+        while (v === 0) v = this.random.float();
 
-        const n = Math.sqrt(-2.0 * Math.log(u)) * Math.cos(2.0 * Math.PI * v);
+        const z =
+            Math.sqrt(-2 * Math.log(u)) *
+            Math.cos(TAU * v);
 
-        return n * stddev + mean;
+        return mean + z * standardDeviation;
+    }
+
+    matrix(
+        rows: number,
+        columns = rows,
+        min = 0,
+        max = 1,
+    ): number[][] {
+
+        return Array.from(
+            { length: rows },
+            () =>
+                Array.from(
+                    { length: columns },
+                    () =>
+                        this.floatRange(min, max),
+                ),
+        );
+    }
+
+    transformMatrix(
+        rows: number,
+        columns = rows,
+    ): number[][] {
+
+        return this.matrix(rows, columns, -1, 1);
+    }
+
+    rgb(): [number, number, number] {
+        return [this.range(256), this.range(256), this.range(256)];
     }
 }
 
-export const rng: Rng = new Rng();
+export const rng = new Rng();

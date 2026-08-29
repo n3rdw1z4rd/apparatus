@@ -1,32 +1,21 @@
 {
     "compilerOptions": {
-        "tsBuildInfoFile": "./node_modules/.tmp/tsconfig.node.tsbuildinfo",
-        "target": "ES2023",
-        "lib": [
-            "ES2023",
-            "WebWorker",
-        ],
+        "target": "ES2022",
         "module": "ESNext",
-        "types": [
-            "node"
-        ],
-        "skipLibCheck": true,
-        /* Bundler mode */
         "moduleResolution": "bundler",
-        "allowImportingTsExtensions": true,
-        "verbatimModuleSyntax": true,
-        "moduleDetection": "force",
-        "noEmit": true,
-        /* Linting */
+        "lib": [
+            "ES2022",
+            "DOM"
+        ],
+        "jsx": "react-jsx",
+        "jsxImportSource": "@n3rdw1z4rd/smoke-ui",
+        "isolatedModules": true,
         "strict": true,
-        "noUnusedLocals": true,
-        "noUnusedParameters": true,
-        "erasableSyntaxOnly": true,
-        "noFallthroughCasesInSwitch": true,
-        "noUncheckedSideEffectImports": true
+        "skipLibCheck": true,
+        "noEmit": true
     },
     "include": [
-        "vite.config.ts"
+        "src"
     ],
     "exclude": [
         "**/_*"

@@ -1,50 +1,96 @@
-import { Emitter } from "./emitter";
+import { Observable } from "@n3rdw1z4rd/smoke-ui";
+import { Vector } from "./vector";
 
-export class Input extends Emitter {
-    keys = new Set<string>();
-    mouseX = 0;
-    mouseY = 0;
-    mouseDown = false;
-    mousePressed = false;
+export class Input {
+    private _isDown = new Map<string, number>();
+    private _position = new Vector();
+    private _activePointerId: number | null = null;
 
-    constructor() {
-        super();
+    readonly onDown = new Observable();
+    readonly onUp = new Observable();
+    readonly onPressed = new Observable();
+    readonly onMove = new Observable();
+    readonly onWheel = new Observable();
 
-        window.addEventListener("keydown", e => {
-            this.keys.add(e.key);
-            this.emit('keydown', e);
+    get position(): Vector { return this._position; }
+
+    inputThreshold = 200;
+
+    constructor(target: Window | HTMLElement) {
+        window.addEventListener('keydown', (ev: KeyboardEvent) => {
+            if (this._isEditableTarget(ev.target)) return;
+
+            if (!ev.repeat) {
+                this._isDown.set(ev.code, ev.timeStamp);
+                this.onDown.notify(ev);
+            }
         });
 
-        window.addEventListener("keyup", e => {
-            this.keys.delete(e.key);
-            this.emit('keyup', e);
-        });
+        window.addEventListener('keyup', (ev: KeyboardEvent) => {
+            if (this._isEditableTarget(ev.target)) return;
 
-        window.addEventListener("mousemove", e => {
-            this.mouseX = e.clientX;
-            this.mouseY = e.clientY;
-            this.emit('mousemove', e);
-        });
+            const downTime: number = this._isDown.get(ev.code) ?? 0;
 
-        window.addEventListener("mousedown", e => {
-            if (e.button === 0) {
-                this.mouseDown = true;
-                this.mousePressed = true;
+            if (ev.timeStamp - downTime < this.inputThreshold) {
+                this.onPressed.notify(ev);
             }
 
-            this.emit('mousedown', e);
+            this._isDown.delete(ev.code);
+            this.onUp.notify(ev);
         });
 
-        window.addEventListener("mouseup", e => {
-            if (e.button === 0) {
-                this.mouseDown = false;
+        target.addEventListener('pointerdown', (evt: Event) => {
+            const ev = evt as PointerEvent;
+
+            this._isDown.set(`Button${ev.button}`, ev.timeStamp);
+            this._activePointerId = ev.pointerId;
+
+            if (target instanceof HTMLElement) {
+                target.setPointerCapture(ev.pointerId);
             }
 
-            this.emit('mouseup', e);
+            this.onDown.notify(ev);
+        });
+
+        target.addEventListener('pointerup', (evt: Event) => {
+            const ev = evt as PointerEvent;
+
+            const button = `Button${ev.button}`;
+            const downTime: number = this._isDown.get(button) ?? 0;
+
+            if (ev.timeStamp - downTime < this.inputThreshold) {
+                this.onPressed.notify(ev);
+            }
+
+            this._isDown.delete(button);
+
+            if (target instanceof HTMLElement && this._activePointerId === ev.pointerId) {
+                target.releasePointerCapture(ev.pointerId);
+                this._activePointerId = null;
+            }
+
+            this.onUp.notify(ev);
+        });
+
+        target.addEventListener('pointermove', (evt: Event) => {
+            const ev = evt as PointerEvent;
+
+            this._position.set(ev.clientX, ev.clientY);
+            this.onMove.notify(ev);
+        });
+
+        target.addEventListener('wheel', (ev: Event) => {
+            this.onWheel.notify(ev as WheelEvent);
         });
     }
 
-    isDown(key: string) {
-        return this.keys.has(key);
+    private _isEditableTarget(target: EventTarget | null): boolean {
+        if (!(target instanceof HTMLElement)) return false;
+
+        return target.tagName === 'INPUT' || target.tagName === 'TEXTAREA' || target.isContentEditable;
+    }
+
+    isDown(name: string): boolean {
+        return this._isDown.has(name);
     }
 }

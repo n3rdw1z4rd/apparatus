@@ -1,17 +1,11 @@
-import { defineConfig } from 'vite';
+import { defineConfig } from "vite";
+import { smoke } from "@n3rdw1z4rd/smoke-ui/vite-plugin";
 import wasm from 'vite-plugin-wasm';
 
-// https://vite.dev/config/
 export default defineConfig({
-    plugins: [
-        wasm(),
-    ],
+    plugins: [smoke()],
     worker: {
         format: 'es',
         plugins: () => [wasm()],
-    },
-    server: {
-        host: true,
-        allowedHosts: ['dev.n3rdw1z4rd.io'],
     },
 });

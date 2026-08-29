@@ -5,15 +5,15 @@
     "type": "module",
     "scripts": {
         "dev": "vite",
-        "build": "tsc -b && vite build",
+        "build": "vite build && tsc -p tsconfig.json --noEmit",
         "preview": "vite preview"
     },
     "dependencies": {
-        "@dimforge/rapier2d": "^0.20.0"
+        "@dimforge/rapier2d": "^0.20.0",
+        "@n3rdw1z4rd/smoke-ui": "^0.1.1"
     },
     "devDependencies": {
-        "@types/node": "^26.4.0",
-        "typescript": "^6.0.2",
+        "typescript": "^6.0.3",
         "vite": "^8.2.2",
         "vite-plugin-wasm": "^3.6.0"
     },
