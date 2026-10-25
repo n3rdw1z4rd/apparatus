@@ -17,7 +17,7 @@ A **scene** is plain data — gravity, grid, parts and an optional script — so
 
 - **Physics off the main thread** — Rapier (WASM) runs in a Web Worker, along with your scripts
 - **Real units** — one grid cell is one meter, gravity is in m/s² (earth, moon, zero-g, flip, or anything in between, live)
-- **Live control panel** (built with [smoke-ui](https://github.com/n3rdw1z4rd/smoke-ui)) — scene, parts, inspector, physics, view, script, share and layout tabs; everything applies instantly
+- **Live control panel** (built with [smoke-ui](https://github.com/n3rdw1z4rd/smoke-ui)) — scene, parts, tree (the entity hierarchy), inspector (generated from component schemas), physics, view, script, share and layout tabs; everything applies instantly
 - **Dockable panel** — dock it to any edge; on phones it's a resizable bottom sheet
 - **Mobile and desktop** — thumb-sized action bar, touch drag, two-finger pan + pinch-zoom, long-press to inspect
 - **Scene scripts** — `build()` generates parts, `setup()` / `step()` run during play; edited in a CodeMirror drawer and hot-swapped
@@ -40,6 +40,8 @@ The **action bar** along the bottom has play/stop, pause, step, add box, add bal
 | scroll, pinch, ctrl+scroll              | zoom                          | zoom                                            |
 | double-click / long-press a part        | open its inspector            | —                                               |
 | double-click / double-tap empty space   | fit view                      | fit view                                        |
+| drag a gizmo handle                     | move / rotate along it        | —                                               |
+| 3D view: drag empty space, right drag   | orbit (shift: pan)            | orbit (shift: pan)                              |
 
 **Keyboard**
 
@@ -54,6 +56,9 @@ The **action bar** along the bottom has play/stop, pause, step, add box, add bal
 | `del` / `backspace`     | delete the selected part                 |
 | `[` / `]`               | rotate the selected part by 15°          |
 | `f`                     | fit view                                 |
+| `g`                     | move gizmo on / off                      |
+| `r`                     | rotate gizmo on / off                    |
+| `v`                     | 2D / 3D view                             |
 | `e`                     | open the script editor                   |
 | `tab`                   | show / hide the panel                    |
 | `h`                     | hide the UI                              |

@@ -2,6 +2,7 @@ import { computed, Signal } from '@n3rdw1z4rd/smoke-ui';
 import { Checkbox, Slider } from '@n3rdw1z4rd/smoke-ui-components';
 import type { Control, CustomControl, Section } from '../app/controls';
 import { seed } from '../app/store';
+import { Hierarchy } from './hierarchy';
 
 /* ------------------------------------------------------------------ */
 /* DOM renderer for the control description in app/controls.ts         */
@@ -37,6 +38,7 @@ function SeedInput(): HTMLElement {
 
 const CUSTOM: Record<CustomControl['id'], () => HTMLElement> = {
     seed: SeedInput,
+    hierarchy: Hierarchy,
 };
 
 /** A numeric field that commits on Enter / blur, and nudges with the arrow keys. */

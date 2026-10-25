@@ -1,7 +1,8 @@
-import { GestureRecognizer, type Entity } from '@n3rdw1z4rd/core';
-import { Body, pickAt, Transform } from '../core/components';
+import { GestureRecognizer } from '@n3rdw1z4rd/core';
+import { pickEntity, type ThreeEntity } from '@n3rdw1z4rd/core/three';
+import { RigidBody } from '../core/components';
 import {
-    camera, ecs, fitView, markDirty, mode, moveEntity, scriptState, selected, setHovered, setPointer,
+    bodyIdOf, camera, fitView, markDirty, mode, moveEntity, scriptState, selected, setHovered, setPointer, viewMode, world,
 } from '../app/store';
 import { showTab } from '../app/ui-state';
 
@@ -14,18 +15,31 @@ import { showTab } from '../app/ui-state';
 /*         (or, while a script runs, to feed it world.pointer)          */
 /*  both:  two fingers pan + pinch-zoom; wheel zooms (ctrl+wheel and    */
 /*         trackpad pinch too); right/middle drag pans; double-tap or   */
+/*  3D view: dragging empty space (or right-drag) orbits instead;       */
+/*         middle drag and shift+drag pan                               */
+/*  gizmo: a press on a gizmo handle belongs to the gizmo               */
 /*         double-click empty space fits the view; long-press or       */
 /*         double-click a part opens its inspector                      */
 /* ------------------------------------------------------------------ */
 
 type Drag =
     | { kind: 'none' }
-    | { kind: 'part'; entity: Entity; dx: number; dy: number; moved: boolean }
+    | { kind: 'part'; entity: ThreeEntity; dx: number; dy: number; moved: boolean }
     | { kind: 'pan' }
-    | { kind: 'grab'; entity: Entity }
+    | { kind: 'orbit' }
+    | { kind: 'gizmo' }
+    | { kind: 'grab'; entity: ThreeEntity }
     | { kind: 'pointer' }; // play + running script: the pointer belongs to the script
 
-export function attachStageInput(canvas: HTMLCanvasElement): { update: () => void } {
+/** Only parts are pickable (not the gizmo or other helpers). */
+const pick = (x: number, y: number, slopPx = 0): ThreeEntity | null =>
+    pickEntity(world, camera, x, y, { slopPx })?.entity ?? null;
+
+/**
+ * Hooks the stage canvas up. `gizmoActive` says whether the pointer is on a gizmo handle;
+ * the gizmo must be created before this, so its pointerdown runs first.
+ */
+export function attachStageInput(canvas: HTMLCanvasElement, opts: { gizmoActive: () => boolean }): { update: () => void } {
     const gestures = new GestureRecognizer({ longPressDuration: 450 });
     const touches = new Set<number>();
     let primary: number | null = null;
@@ -39,9 +53,15 @@ export function attachStageInput(canvas: HTMLCanvasElement): { update: () => voi
     };
 
     const sendPointer = (sx: number, sy: number, down: boolean) => {
-        const w = camera.screenToWorld(sx, sy);
-        setPointer({ x: w.x, y: w.y, down, active: over, grab: drag.kind === 'grab' ? drag.entity : null });
+        const w = camera.screenToWorld(sx, sy, 0);
+        if (!w) return;
+        // the worker speaks +y down
+        setPointer({ x: w.x, y: -w.y, down, active: over, grab: drag.kind === 'grab' ? bodyIdOf(drag.entity) : null });
     };
+
+    const is3d = () => viewMode.get() === '3d';
+    /** dragging empty space: pan in 2D, orbit in 3D (shift pans) */
+    const emptyDrag = (ev: PointerEvent): Drag => (is3d() && !ev.shiftKey ? { kind: 'orbit' } : { kind: 'pan' });
 
     const endDrag = () => {
         if (drag.kind === 'part' && drag.moved) markDirty();
@@ -69,38 +89,41 @@ export function attachStageInput(canvas: HTMLCanvasElement): { update: () => voi
         over = true;
 
         if (ev.button === 1 || ev.button === 2) {
-            drag = { kind: 'pan' };
+            drag = ev.button === 2 && is3d() && !ev.shiftKey ? { kind: 'orbit' } : { kind: 'pan' };
             canvas.classList.add('panning');
             return;
         }
         if (ev.button !== 0) return;
 
-        const w = camera.screenToWorld(p.x, p.y);
-        const slop = ev.pointerType === 'touch' ? 14 / camera.zoom : 0;
-        const hit = pickAt(ecs, w.x, w.y, slop);
+        if (mode.get() === 'build' && opts.gizmoActive()) {
+            drag = { kind: 'gizmo' };
+            return;
+        }
+
+        const w = camera.screenToWorld(p.x, p.y, 0);
+        const hit = pick(p.x, p.y, ev.pointerType === 'touch' ? 14 : 0);
 
         if (mode.get() === 'build') {
-            if (hit !== null) {
+            if (hit !== null && w) {
                 selected.set(hit);
-                const t = ecs.getComponent(hit, Transform)!;
-                drag = { kind: 'part', entity: hit, dx: w.x - t.x, dy: w.y - t.y, moved: false };
+                drag = { kind: 'part', entity: hit, dx: w.x - hit.position.x, dy: w.y - hit.position.y, moved: false };
                 canvas.classList.add('dragging');
             } else {
                 selected.set(null);
-                drag = { kind: 'pan' };
+                drag = emptyDrag(ev);
                 canvas.classList.add('panning');
             }
             return;
         }
 
         // play
-        if (hit !== null && !ecs.getComponent(hit, Body)?.fixed) {
+        if (hit !== null && !world.getComponent<RigidBody>(hit, RigidBody)?.fixed) {
             drag = { kind: 'grab', entity: hit };
             canvas.classList.add('dragging');
         } else if (scriptState.get().kind === 'running') {
             drag = { kind: 'pointer' };
         } else {
-            drag = { kind: 'pan' };
+            drag = emptyDrag(ev);
             canvas.classList.add('panning');
         }
         sendPointer(p.x, p.y, true);
@@ -115,9 +138,8 @@ export function attachStageInput(canvas: HTMLCanvasElement): { update: () => voi
 
         if (ev.pointerId !== primary) {
             // plain hover (mouse, no button)
-            if (ev.pointerType === 'mouse' && mode.get() === 'build') {
-                const w = camera.screenToWorld(p.x, p.y);
-                const hit = pickAt(ecs, w.x, w.y);
+            if (ev.pointerType === 'mouse' && mode.get() === 'build' && !opts.gizmoActive()) {
+                const hit = pick(p.x, p.y);
                 setHovered(hit);
                 canvas.style.cursor = hit !== null ? 'grab' : '';
             } else {
@@ -133,7 +155,8 @@ export function attachStageInput(canvas: HTMLCanvasElement): { update: () => voi
 
         switch (drag.kind) {
             case 'part': {
-                const w = camera.screenToWorld(p.x, p.y);
+                const w = camera.screenToWorld(p.x, p.y, 0);
+                if (!w) break;
                 moveEntity(drag.entity, w.x - drag.dx, w.y - drag.dy);
                 drag.moved = true;
                 break;
@@ -141,9 +164,12 @@ export function attachStageInput(canvas: HTMLCanvasElement): { update: () => voi
             case 'pan':
                 camera.pan(dx, dy);
                 break;
+            case 'orbit':
+                camera.rotate(dx, dy);
+                break;
         }
 
-        if (mode.get() === 'play') sendPointer(p.x, p.y, drag.kind !== 'pan');
+        if (mode.get() === 'play') sendPointer(p.x, p.y, drag.kind !== 'pan' && drag.kind !== 'orbit');
     });
 
     const up = (ev: PointerEvent) => {
@@ -171,8 +197,8 @@ export function attachStageInput(canvas: HTMLCanvasElement): { update: () => voi
 
     canvas.addEventListener('dblclick', (ev) => {
         const p = local(ev);
-        const w = camera.screenToWorld(p.x, p.y);
-        const hit = pickAt(ecs, w.x, w.y);
+        if (opts.gizmoActive()) return;
+        const hit = pick(p.x, p.y);
         if (hit !== null && mode.get() === 'build') {
             selected.set(hit);
             showTab('inspect');
@@ -215,8 +241,7 @@ export function attachStageInput(canvas: HTMLCanvasElement): { update: () => voi
         }
 
         for (const ev of frame.events) {
-            const w = camera.screenToWorld(ev.x, ev.y);
-            const hit = pickAt(ecs, w.x, w.y, 14 / camera.zoom);
+            const hit = pick(ev.x, ev.y, 14);
 
             if (ev.gesture === 'doubleTap' && hit === null) fitView();
 

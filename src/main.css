@@ -665,3 +665,72 @@ body,
 @media (max-width: 440px) {
     .action-bar .wide-only { display: none; }
 }
+
+/* ── part labels (DOM over the canvas) ─────────────────────────── */
+
+.labels {
+    position: absolute;
+    inset: 0;
+    overflow: hidden;
+    pointer-events: none;
+}
+
+.labels span {
+    position: absolute;
+    left: 0;
+    top: 0;
+    white-space: nowrap;
+    font-size: 10px;
+    color: #9a9a9a;
+    will-change: transform;
+}
+
+/* ── scene tree ────────────────────────────────────────────────── */
+
+.tree {
+    display: flex;
+    flex-direction: column;
+    gap: 6px;
+    min-height: 0;
+}
+
+.tree-filter { width: 100%; }
+
+.tree-list {
+    display: flex;
+    flex-direction: column;
+    max-height: 50dvh;
+    overflow-y: auto;
+    border: 1px solid var(--smoke-border, #3a3a3a);
+    border-radius: 4px;
+}
+
+.tree-row {
+    display: flex;
+    align-items: baseline;
+    gap: 8px;
+    min-height: var(--hit);
+    padding: 2px 8px;
+    border: 0;
+    background: transparent;
+    color: inherit;
+    font: inherit;
+    text-align: left;
+    cursor: pointer;
+}
+
+.tree-row:hover { background: #1f1f1f; }
+.tree-row.active { background: color-mix(in srgb, var(--smoke-accent, #3fd1a4) 22%, transparent); }
+.tree-label { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.tree-flags { margin-left: auto; color: #808080; font-size: 0.9em; white-space: nowrap; }
+
+/* inspector component headers: name on the left, remove (×) on the right, one line */
+.row-buttons:has(> .ctl-text.heading):has(> .btn) {
+    flex-wrap: nowrap;
+    justify-content: space-between;
+    margin: 10px 0 4px;
+    border-top: 1px solid var(--smoke-border, #3a3a3a);
+    padding-top: 8px;
+}
+.row-buttons:has(> .ctl-text.heading):has(> .btn) > .ctl-text.heading { margin: 0; width: auto; }
+.row-buttons:has(> .ctl-text.heading):has(> .btn) > .btn { min-width: var(--hit); padding: 0 6px; }

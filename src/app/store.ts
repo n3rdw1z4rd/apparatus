@@ -1,8 +1,8 @@
 import { computed, Signal } from '@n3rdw1z4rd/smoke-ui';
-import { ECS, log, type Entity } from '@n3rdw1z4rd/core';
-import { Camera } from '../core/camera';
+import { log } from '@n3rdw1z4rd/core';
+import { EditorCamera, World, type SceneDoc, type ThreeEntity } from '@n3rdw1z4rd/core/three';
 import {
-    Body, Meta, Shape, Transform, addPart, boundsOf, partEntities, partOf, partsOf, snapPosition,
+    Meta, RigidBody, Shape, addPart, boundsOf, partEntities, partOf, partsOf, snapPosition,
 } from '../core/components';
 import {
     BUILTIN_SCRIPTS, PALETTE, PRESETS, PX_PER_M, decodeScene, defaultScene, encodeScene, hashString,
@@ -31,11 +31,15 @@ export const showGrid = new Signal(true);
 export const showLabels = new Signal(false);
 
 export const mode = new Signal<Mode>('build');
+/** '2d': orthographic, locked facing the XY plane; '3d': perspective, orbitable */
+export const viewMode = new Signal<'2d' | '3d'>('2d');
+/** the transform gizmo on the selected part (build mode) */
+export const gizmoMode = new Signal<'off' | 'translate' | 'rotate'>('translate');
 export const paused = new Signal(false);
 export const playing = computed(() => mode.get() === 'play');
 
-/** The selected part (an entity id), or null. */
-export const selected = new Signal<Entity | null>(null);
+/** The selected part, or null. */
+export const selected = new Signal<ThreeEntity | null>(null);
 /** Bumped on every edit to the scene's parts (not on physics frames). */
 export const revision = new Signal(0);
 export const partCount = new Signal(0);
@@ -61,20 +65,56 @@ export const editorOpen = new Signal(false);
 /* Engine instances                                                     */
 /* ------------------------------------------------------------------ */
 
-export const ecs = new ECS();
-export const camera = new Camera();
+export const world = new World();
+export const camera = new EditorCamera({ orbit: false });
+camera.minZoom = 0.1;
+camera.maxZoom = 6;
 export let physics: PhysicsClient;
 
+viewMode.subscribe((m) => {
+    camera.projection = m === '3d' ? 'perspective' : 'orthographic';
+    camera.orbit = m === '3d';
+    if (m === '3d' && camera.pitch === 0 && camera.yaw === 0) {
+        // a gentle angle, so it's obvious the view is 3D
+        camera.pitch = 0.35;
+        camera.yaw = -0.45;
+    }
+    camera.update();
+});
+
 /** Hovered part, for the renderer (not reactive). */
-export let hovered: Entity | null = null;
-export function setHovered(e: Entity | null): void {
+export let hovered: ThreeEntity | null = null;
+export function setHovered(e: ThreeEntity | null): void {
     hovered = e;
 }
 
-/** Physics ids of bodies spawned by scripts during play → their entities. */
-const spawnedEntities = new Map<number, Entity>();
-/** The scene as it was when play started; restored on stop. */
-let buildSnapshot: { parts: PartDef[]; selectedIndex: number } | null = null;
+/*
+ * The physics worker names bodies by number. While playing, scene parts are 1..n
+ * (assigned at play) and script-spawned bodies get ids from SPAWN_ID_BASE up.
+ */
+const bodyEntities = new Map<number, ThreeEntity>();
+const bodyIds = new Map<ThreeEntity, number>();
+
+/** The physics id of a part while playing, or null. */
+export function bodyIdOf(e: ThreeEntity | null): number | null {
+    return e ? bodyIds.get(e) ?? null : null;
+}
+
+function setBody(id: number, e: ThreeEntity): void {
+    bodyEntities.set(id, e);
+    bodyIds.set(e, id);
+}
+
+function clearBodies(): void {
+    bodyEntities.clear();
+    bodyIds.clear();
+}
+
+/**
+ * The scene as it was when play started; restored on stop. The world snapshot keeps every
+ * entity's uuid, so selection and references survive a play/stop.
+ */
+let buildSnapshot: { parts: PartDef[]; doc: SceneDoc; selected: string | null } | null = null;
 
 function createPhysics(): void {
     physics = new PhysicsClient();
@@ -155,16 +195,16 @@ export function snapshot(): SceneConfig {
         gravity: { x: gravityX.get(), y: gravityY.get() },
         grid: gridSize.get(),
         snap: snap.get(),
-        parts: buildSnapshot ? buildSnapshot.parts : partsOf(ecs),
+        parts: buildSnapshot ? buildSnapshot.parts : partsOf(world),
         // An untouched template in the editor isn't part of the scene.
         script: scriptSource.get() === SCRIPT_EXAMPLES[0].source ? '' : scriptSource.get(),
     });
 }
 
-function setParts(parts: PartDef[]): Entity[] {
-    ecs.clear();
-    spawnedEntities.clear();
-    return parts.map((p) => addPart(ecs, p));
+function setParts(parts: PartDef[]): ThreeEntity[] {
+    world.clear();
+    clearBodies();
+    return parts.map((p) => addPart(world, p));
 }
 
 export async function loadScene(cfg: SceneConfig, opts: { untrusted?: boolean; fit?: boolean } = {}): Promise<void> {
@@ -208,55 +248,77 @@ let urlTimer = 0;
 /** Call after any change to the scene; refreshes the UI and (soon) the URL. */
 export function markDirty(): void {
     revision.set(revision.get() + 1);
-    partCount.set(partEntities(ecs).length);
+    partCount.set(partEntities(world).length);
     clearTimeout(urlTimer);
     urlTimer = window.setTimeout(() => void writeUrl(), 400);
 }
 
 /** Where a new part goes: the middle of the view, snapped. */
 function spawnPoint(): { x: number; y: number } {
-    return { x: camera.x, y: camera.y };
+    return { x: camera.target.x, y: camera.target.y };
 }
 
 export function addNewPart(shape: PartShape, fixed = false): void {
     if (mode.get() === 'play') stop();
     const g = gridSize.get();
     const at = spawnPoint();
+    // PartDef is +y down
     const part: PartDef = shape === 'box'
-        ? { shape, x: at.x, y: at.y, w: g * 2, h: g, fixed }
-        : { shape, x: at.x, y: at.y, r: g / 2, fixed };
+        ? { shape, x: at.x, y: -at.y, w: g * 2, h: g, fixed }
+        : { shape, x: at.x, y: -at.y, r: g / 2, fixed };
     part.color = fixed ? undefined : PALETTE[(partCount.get() + 1) % PALETTE.length];
-    const e = addPart(ecs, part);
+    const e = addPart(world, part);
     if (snap.get()) snapEntity(e);
     selected.set(e);
     markDirty();
 }
 
-export function snapEntity(e: Entity): void {
-    const t = ecs.getComponent(e, Transform);
-    const s = ecs.getComponent(e, Shape);
-    if (!t || !s) return;
-    const p = snapPosition(s, t.angle, t.x, t.y, gridSize.get());
-    t.x = p.x;
-    t.y = p.y;
+export function snapEntity(e: ThreeEntity): void {
+    const s = world.getComponent<Shape>(e, Shape);
+    if (!s) return;
+    const p = snapPosition(s, e.rotation.z, e.position.x, e.position.y, gridSize.get());
+    e.position.x = p.x;
+    e.position.y = p.y;
 }
 
-export function moveEntity(e: Entity, x: number, y: number): void {
-    const t = ecs.getComponent(e, Transform);
-    if (!t) return;
-    t.x = x;
-    t.y = y;
-    if (snap.get()) snapEntity(e);
-    // Moving a generated part by hand makes it yours: build() won't replace it.
-    const meta = ecs.getComponent(e, Meta);
+/** Edited by hand: build() won't replace it any more. */
+export function claimEntity(e: ThreeEntity): void {
+    const meta = world.getComponent<Meta>(e, Meta);
     if (meta) meta.gen = false;
+}
+
+/** Moves a part to (x, y) in editor coordinates (+y up), snapping if snap is on. */
+export function moveEntity(e: ThreeEntity, x: number, y: number): void {
+    e.position.x = x;
+    e.position.y = y;
+    if (snap.get()) snapEntity(e);
+    claimEntity(e);
+    world.changed(e);
+    markDirty();
+}
+
+/** The gizmo moved or rotated a part; `done` once the drag ends. */
+export function gizmoEdited(e: ThreeEntity, done: boolean): void {
+    if (done) {
+        if (snap.get()) {
+            const step = Math.PI / 12; // 15°
+            e.rotation.z = Math.round(e.rotation.z / step) * step;
+            snapEntity(e);
+        }
+        // a 2D scene stays on its plane
+        e.position.z = 0;
+        e.rotation.x = 0;
+        e.rotation.y = 0;
+    }
+    claimEntity(e);
+    world.changed(e);
     markDirty();
 }
 
 export function deleteSelected(): void {
     const e = selected.get();
     if (e === null || mode.get() === 'play') return;
-    ecs.destroyEntity(e);
+    world.remove(e);
     selected.set(null);
     markDirty();
 }
@@ -264,10 +326,12 @@ export function deleteSelected(): void {
 export function duplicateSelected(): void {
     const e = selected.get();
     if (e === null || mode.get() === 'play') return;
-    const part = partOf(ecs, e);
-    if (!part) return;
+    if (!partOf(world, e)) return;
     const g = gridSize.get();
-    const copy = addPart(ecs, { ...part, x: part.x + g, y: part.y - g, gen: false });
+    const copy = world.clone(e);
+    copy.position.x += g;
+    copy.position.y += g;
+    claimEntity(copy);
     if (snap.get()) snapEntity(copy);
     selected.set(copy);
     markDirty();
@@ -276,19 +340,45 @@ export function duplicateSelected(): void {
 export function rotateSelected(degrees: number): void {
     const e = selected.get();
     if (e === null || mode.get() === 'play') return;
-    const t = ecs.getComponent(e, Transform);
-    if (!t) return;
-    const step = (Math.PI / 180) * degrees;
-    t.angle = Math.round((t.angle + step) / step) * step;
-    if (Math.abs(t.angle) >= Math.PI * 2 - 1e-6) t.angle = 0;
+    // positive degrees turn clockwise on screen; three.js angles are counter-clockwise
+    const step = (Math.PI / 180) * -degrees;
+    let angle = Math.round((e.rotation.z + step) / step) * step;
+    if (Math.abs(angle) >= Math.PI * 2 - 1e-6) angle = 0;
+    e.rotation.z = angle;
+    world.changed(e);
     markDirty();
 }
 
 export function toggleSelectedFixed(): void {
     const e = selected.get();
-    const b = e === null ? undefined : ecs.getComponent(e, Body);
+    const b = e === null ? undefined : world.getComponent<RigidBody>(e, RigidBody);
     if (!b || mode.get() === 'play') return;
     b.fixed = !b.fixed;
+    markDirty();
+}
+
+/** Adds an empty entity (no components) at the middle of the view and selects it. */
+export function addEmptyEntity(): void {
+    if (mode.get() === 'play') stop();
+    const e = world.create('entity');
+    e.position.set(camera.target.x, camera.target.y, 0);
+    selected.set(e);
+    markDirty();
+}
+
+/** Adds a component (by type name) to the selected entity, with its defaults. */
+export function addComponentToSelected(name: string): void {
+    const e = selected.get();
+    if (!e || mode.get() === 'play' || world.hasComponent(e, name)) return;
+    world.addComponent(e, name);
+    claimEntity(e);
+    markDirty();
+}
+
+export function removeComponentFromSelected(name: string): void {
+    const e = selected.get();
+    if (!e || mode.get() === 'play') return;
+    world.removeComponent(e, name);
     markDirty();
 }
 
@@ -302,10 +392,10 @@ export function clearParts(): void {
 
 export function removeGenerated(): void {
     if (mode.get() === 'play') stop();
-    for (const e of partEntities(ecs)) {
-        if (ecs.getComponent(e, Meta)?.gen) ecs.destroyEntity(e);
+    for (const e of partEntities(world)) {
+        if (world.getComponent<Meta>(e, Meta)?.gen) world.remove(e);
     }
-    if (selected.get() !== null && !ecs.hasComponent(selected.get()!, Transform)) selected.set(null);
+    if (selected.get() !== null && !world.has(selected.get()!)) selected.set(null);
     markDirty();
 }
 
@@ -316,13 +406,16 @@ export function removeGenerated(): void {
 export function play(): void {
     if (mode.get() === 'play') return;
 
-    const entities = partEntities(ecs);
-    const parts = entities.map((e) => partOf(ecs, e)!);
-    buildSnapshot = { parts, selectedIndex: entities.indexOf(selected.get() ?? -1) };
+    // only entities that are physics parts (a Shape and a RigidBody) go to the worker
+    const entities = partEntities(world).filter((e) => partOf(world, e) !== null);
+    const parts = entities.map((e) => partOf(world, e)!);
+    buildSnapshot = { parts, doc: world.serialize(), selected: selected.get()?.uuid ?? null };
+    clearBodies();
+    entities.forEach((e, i) => setBody(i + 1, e));
 
     const script = scriptRunnable() ? scriptSource.get() : null;
     physics.play({
-        bodies: entities.map((id, i) => ({ id, part: parts[i] })),
+        bodies: entities.map((e, i) => ({ id: bodyIds.get(e)!, part: parts[i] })),
         gravity: { x: gravityX.get(), y: gravityY.get() },
         timeScale: timeScale.get(),
         paused: paused.get(),
@@ -342,9 +435,10 @@ export function stop(): void {
 
     const snap = buildSnapshot;
     buildSnapshot = null;
+    clearBodies();
     if (snap) {
-        const entities = setParts(snap.parts);
-        selected.set(snap.selectedIndex >= 0 ? entities[snap.selectedIndex] ?? null : null);
+        world.load(snap.doc);
+        selected.set(snap.selected ? world.get(snap.selected) ?? null : null);
     }
 
     mode.set('build');
@@ -391,29 +485,29 @@ function applyFrame(f: FrameInfo): void {
     if (mode.get() !== 'play') return;
 
     for (const s of f.spawned) {
-        spawnedEntities.set(s.id, addPart(ecs, s.part, { spawned: true }));
+        setBody(s.id, addPart(world, s.part, { spawned: true }));
     }
 
     for (const id of f.removed) {
-        const e = spawnedEntities.get(id) ?? id;
-        spawnedEntities.delete(id);
-        ecs.destroyEntity(e);
+        const e = bodyEntities.get(id);
+        if (!e) continue;
+        bodyEntities.delete(id);
+        bodyIds.delete(e);
+        world.remove(e);
         if (selected.get() === e) selected.set(null);
     }
 
+    // [id, x, y, angle] per body, in the worker's +y-down, clockwise convention
     const d = f.data;
     for (let i = 0; i < d.length; i += 4) {
-        const id = d[i];
-        const e = spawnedEntities.get(id) ?? id;
-        const t = ecs.getComponent(e, Transform);
-        if (t) {
-            t.x = d[i + 1];
-            t.y = d[i + 2];
-            t.angle = d[i + 3];
-        }
+        const e = bodyEntities.get(d[i]);
+        if (!e) continue;
+        e.position.x = d[i + 1];
+        e.position.y = -d[i + 2];
+        e.rotation.z = -d[i + 3];
     }
 
-    if (f.spawned.length || f.removed.length) partCount.set(partEntities(ecs).length);
+    if (f.spawned.length || f.removed.length) partCount.set(partEntities(world).length);
     simTime.set(f.time.toFixed(1));
 
     if (f.scriptError) {
@@ -441,7 +535,7 @@ export async function runBuild(source = scriptSource.get(), opts: { quiet?: bool
     trust(source);
     building = true;
     try {
-        const hand = partsOf(ecs).filter((p) => !p.gen);
+        const hand = partsOf(world).filter((p) => !p.gen);
         const res = await physics.build(source, hand, gridSize.get(), seed.get());
 
         if (res.error) {
@@ -450,11 +544,12 @@ export async function runBuild(source = scriptSource.get(), opts: { quiet?: bool
             return false;
         }
 
-        const keep = partsOf(ecs).filter((p) => !p.gen);
-        const sel = selected.get();
-        const selIndex = sel === null ? -1 : partEntities(ecs).indexOf(sel);
-        const entities = setParts([...keep, ...(res.parts ?? [])]);
-        selected.set(selIndex >= 0 && selIndex < keep.length ? entities[selIndex] : null);
+        // generated parts are replaced; hand-placed ones (and their uuids) stay
+        for (const e of partEntities(world)) {
+            if (world.getComponent<Meta>(e, Meta)?.gen) world.remove(e);
+        }
+        for (const p of res.parts ?? []) addPart(world, p);
+        if (selected.get() && !world.has(selected.get()!)) selected.set(null);
 
         scriptState.set({ kind: 'ready' });
         markDirty();
@@ -498,13 +593,14 @@ export function setViewInsets(fn: typeof viewInsets): void {
 export function fitView(): void {
     let minX = Infinity, minY = Infinity, maxX = -Infinity, maxY = -Infinity;
     const huge = 24 * gridSize.get();
-    for (const [e, t, s] of ecs.query(Transform, Shape)) {
-        const b = boundsOf(t, s);
+    for (const e of partEntities(world)) {
+        const s = world.getComponent<Shape>(e, Shape)!;
+        const b = boundsOf(e, s);
         minY = Math.min(minY, b.minY);
         maxY = Math.max(maxY, b.maxY);
         // A long fixed floor or wall shouldn't zoom the interesting parts down to specks:
         // it only counts vertically.
-        if (ecs.getComponent(e, Body)?.fixed && b.maxX - b.minX > huge) continue;
+        if (world.getComponent<RigidBody>(e, RigidBody)?.fixed && b.maxX - b.minX > huge) continue;
         minX = Math.min(minX, b.minX);
         maxX = Math.max(maxX, b.maxX);
     }
@@ -513,9 +609,9 @@ export function fitView(): void {
         maxX = huge / 2;
     }
     if (!Number.isFinite(minX)) {
-        camera.x = 0;
-        camera.y = 0;
+        camera.target.set(0, 0, 0);
         camera.zoom = 1;
+        camera.update();
         return;
     }
     camera.fit(minX, minY, maxX, maxY, viewInsets());

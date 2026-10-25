@@ -2,9 +2,9 @@ import { computed } from '@n3rdw1z4rd/smoke-ui';
 import { setTheme } from '@n3rdw1z4rd/smoke-ui-components';
 import * as store from './app/store';
 import {
-    addNewPart, boot, camera, deleteSelected, duplicateSelected, ecs, editorOpen, fitView, fps, frameTick, gridSize,
-    hovered, mode, partCount, paused, rotateSelected, sceneName, scriptState, selected, showGrid, showLabels, simRate,
-    simTime, stepOnce, stop, togglePause, togglePlay, trustScript, ignoreScript,
+    addNewPart, boot, camera, deleteSelected, duplicateSelected, editorOpen, fitView, fps, frameTick, gizmoEdited,
+    gizmoMode, gridSize, hovered, mode, partCount, paused, rotateSelected, sceneName, scriptState, selected, showGrid,
+    showLabels, simRate, simTime, stepOnce, stop, togglePause, togglePlay, trustScript, ignoreScript, viewMode, world,
 } from './app/store';
 import './app/inspector';
 import { dockEdge, dockOpen, toggleDock, toggleUi, uiHidden } from './app/ui-state';
@@ -79,7 +79,8 @@ document.getElementById('root')!.append(app);
 /* Renderer + input + main loop                                         */
 /* ------------------------------------------------------------------ */
 
-const renderer = new Renderer(stage, camera);
+const renderer = new Renderer(stage, camera, world);
+renderer.onGizmoChange = gizmoEdited;
 
 // What the dock and action bar cover, so "fit view" frames the scene in the space that's left.
 store.setViewInsets(() => {
@@ -98,18 +99,20 @@ store.setViewInsets(() => {
     }
     return insets;
 });
-const input = attachStageInput(renderer.canvas);
+const input = attachStageInput(renderer.canvas, { gizmoActive: () => renderer.gizmoActive });
 
 renderer.start((dt) => {
     input.update();
     frameTick(dt);
-    renderer.draw(ecs, {
+    renderer.draw({
         grid: gridSize.get(),
         showGrid: showGrid.get(),
         showLabels: showLabels.get(),
         selected: selected.get(),
         hovered,
         building: mode.get() === 'build',
+        gizmo: gizmoMode.get(),
+        flat: viewMode.get() === '2d',
     });
 });
 
@@ -143,6 +146,9 @@ window.addEventListener('keydown', (ev) => {
         case '[': rotateSelected(-15); break;
         case ']': rotateSelected(15); break;
         case 'f': fitView(); break;
+        case 'g': gizmoMode.set(gizmoMode.get() === 'translate' ? 'off' : 'translate'); break;
+        case 'r': gizmoMode.set(gizmoMode.get() === 'rotate' ? 'off' : 'rotate'); break;
+        case 'v': viewMode.set(viewMode.get() === '2d' ? '3d' : '2d'); break;
         case 'e': editorOpen.set(true); break;
         case 'Tab': toggleDock(); break;
         case 'h': toggleUi(); break;
@@ -156,10 +162,11 @@ window.addEventListener('keydown', (ev) => {
 
 void boot();
 
-// Console access for live tinkering: `apparatus.store.addNewPart('ball')`, `apparatus.ecs`, …
+// Console access for live tinkering: `apparatus.store.addNewPart('ball')`, `apparatus.world`, …
 (window as any).apparatus = {
     store,
-    ecs,
+    world,
     camera,
+    renderer,
     get physics() { return store.physics; },
 };
