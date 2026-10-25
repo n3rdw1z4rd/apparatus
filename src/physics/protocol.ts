@@ -1,0 +1,58 @@
+import type { PartDef } from '../core/scene';
+
+/* Messages between the main thread (PhysicsClient) and physics.worker.ts. */
+
+export interface BodyInit {
+    id: number;
+    part: PartDef;
+}
+
+export interface Vec2 {
+    x: number;
+    y: number;
+}
+
+export interface PointerMsg {
+    /** world px */
+    x: number;
+    y: number;
+    down: boolean;
+    /** over the canvas */
+    active: boolean;
+    /** body being dragged during play, or null */
+    grab: number | null;
+}
+
+export type ToWorker =
+    | { t: 'play'; bodies: BodyInit[]; gravity: Vec2; timeScale: number; paused: boolean; seed: number; grid: number; script: string | null }
+    | { t: 'stop' }
+    | { t: 'pause'; paused: boolean }
+    | { t: 'step' }
+    | { t: 'params'; gravity: Vec2; timeScale: number }
+    | ({ t: 'pointer' } & PointerMsg)
+    | { t: 'build'; id: number; script: string; parts: PartDef[]; grid: number; seed: number };
+
+export interface SpawnedBody {
+    id: number;
+    part: PartDef;
+}
+
+export type FromWorker =
+    | { t: 'ready' }
+    | {
+        t: 'frame';
+        /** [id, x, y, angle] per body, world px / radians */
+        data: Float32Array;
+        time: number;
+        frame: number;
+        /** ms spent in the last step (script + physics) */
+        stepMs: number;
+        spawned: SpawnedBody[];
+        removed: number[];
+        /** set once when the running script failed and was stopped */
+        scriptError?: string;
+    }
+    | { t: 'built'; id: number; parts?: PartDef[]; error?: string };
+
+/** Ids the worker hands to bodies spawned by scripts (scene parts use their entity ids). */
+export const SPAWN_ID_BASE = 1_000_000;
