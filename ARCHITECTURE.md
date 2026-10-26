@@ -54,3 +54,22 @@ This file records the decisions; it changes when they do.
 5. **Port the presets** to the new scene model (migration for old links).
 6. **Scripts** — per-entity script components.
 7. **Graphs** — node graph document, editor, compiler → script modules.
+
+## Node graph (`feature/node-graph`)
+
+A second page, **`graph.html`**, where the scene *is* a node graph (the scene editor at
+`index.html` keeps working alongside it).
+
+| Area | Decision |
+| --- | --- |
+| Model | **Dataflow, like ComfyUI.** The graph evaluates to a `SceneData` object; the engine runs it (Godot-style: data in, engine runs). |
+| Nodes | **A node is a function with a typed interface** — `inputs` (pins), `params` (widgets), `outputs`, `run(inputs, params, ctx)`. Logic is code, written by hand; the graph only wires data. Built-ins are TS (`defineNode`); **script nodes** are ES modules with the same exports, written in the editor and saved inside the graph document (`doc.scripts`). |
+| Core | Format, types, registry, script compiler and evaluator live in **`@n3rdw1z4rd/core/graph`** (no DOM; tested in Node). Scene nodes, engine and editor live here. |
+| Evaluation | Lazy (only what Output nodes need), memoized (only changed nodes and their downstream re-run), **list broadcasting** (a list into a plain pin runs the node per item), `type[]` list ports, `multi` list inputs (several links, concatenated), errors stay local. |
+| Animation | **Optional per node, default off** (the Time node defaults on). While the viewport plays, animated nodes re-run every frame with `ctx.time` / `dt` / `frame` and their downstream follows; everything else stays cached. No animated node → no per-frame work. |
+| Output | The **Viewport** node hosts the engine: live preview while building, ▶ to play (physics in the worker; physics owns bodies, the graph keeps driving everything else), resizable, full screen (`⤢`, esc to leave, space plays). |
+| Engine | `src/graph/engine.ts`: diffs scene entities by id (`<node id>:<index>`) into a core `World`, draws with the existing three.js renderer, plays with the existing Rapier worker. |
+| Editor | `src/graph/editor/`: DOM nodes + SVG wires, pan/zoom (drag, wheel, pinch), wire dragging with type checks (compatible pins light up), drop a wire on empty space → node menu filtered to nodes that take it, inline widgets for unconnected inputs (numbers scrub by dragging), undo/redo, autosave (localStorage), export/import JSON. Graphs from files don't run their scripts until trusted. |
+
+Next: graph evaluation in a worker (watchdog for script nodes), behaviours (per-entity scripts
+with exec flow), subgraphs, 3D output.

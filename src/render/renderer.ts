@@ -113,9 +113,13 @@ export class Renderer {
     }
 
     resize(): void {
-        const rect = this.canvas.parentElement!.getBoundingClientRect();
-        this.view.resize(rect.width, rect.height);
-        this.gl.setSize(Math.max(1, rect.width), Math.max(1, rect.height));
+        // layout size, not getBoundingClientRect: the container may sit inside a CSS-scaled
+        // parent (a zoomed node graph), and the camera works in the canvas's own CSS px
+        const parent = this.canvas.parentElement!;
+        const w = Math.max(1, parent.clientWidth);
+        const h = Math.max(1, parent.clientHeight);
+        this.view.resize(w, h);
+        this.gl.setSize(w, h);
     }
 
     start(frame: (dt: number) => void): void {

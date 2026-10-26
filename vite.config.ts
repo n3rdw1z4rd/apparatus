@@ -22,9 +22,13 @@ export default defineConfig({
     build: {
         target: 'es2022',
         chunkSizeWarningLimit: 2000,
+        rollupOptions: {
+            // two pages: the scene editor and the node graph
+            input: { main: 'index.html', graph: 'graph.html' },
+        },
     },
     server: {
         host: true,
-        allowedHosts: ['dev.n3rdw1z4rd.io'],
+        allowedHosts: ['dev.n3rdw1z4rd.cloud'],
     },
 });
