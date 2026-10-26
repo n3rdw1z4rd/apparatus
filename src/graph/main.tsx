@@ -3,10 +3,10 @@ import { addNode } from '@n3rdw1z4rd/core/graph';
 import { GraphCanvas } from './editor/canvas';
 import { openScriptPanel, setScriptAddHandler } from './editor/script-panel';
 import {
-    boot, doc, edit, exportGraph, importGraph, redo, registry, replace, resumeScripts, scriptsSuspended, scriptsTrusted,
+    boot, doc, edit, exportGraph, importGraph, loadExample, redo, registry, resumeScripts, scriptsSuspended, scriptsTrusted,
     selection, status, trustScripts, undo,
 } from './editor/state';
-import { exampleGraph } from './editor/example';
+import { DEFAULT_EXAMPLE, EXAMPLES } from './editor/examples';
 
 /* ------------------------------------------------------------------ */
 /* apparatus · graph — the scene as a node graph. Nodes are functions   */
@@ -38,6 +38,22 @@ const pickImport = () => {
     input.click();
 };
 
+/** The Examples dropdown (far right of the toolbar). Picking one is a single undo step. */
+const ExamplesMenu = () => {
+    const select = (
+        <select className="btn graph-examples" title="load an example graph (undo to go back)">
+            <option value="" disabled selected>Examples</option>
+            {EXAMPLES.map((e) => <option value={e.id} title={e.description}>{e.label}</option>)}
+        </select>
+    ) as HTMLSelectElement;
+    select.addEventListener('change', () => {
+        loadExample(select.value);
+        select.value = '';
+        requestAnimationFrame(() => canvas.fit());
+    });
+    return select;
+};
+
 const Toolbar = () => (
     <nav className="graph-bar">
         <a className="graph-brand" href="./" title="the scene editor">apparatus</a>
@@ -52,10 +68,12 @@ const Toolbar = () => (
         <button className="btn" title="frame every node (f)" onClick={() => canvas.fit()}>fit</button>
         <button className="btn" title="save the graph as JSON" onClick={exportGraph}>export</button>
         <button className="btn" title="load a graph from JSON" onClick={pickImport}>import</button>
-        <button className="btn" title="start over from the example graph" onClick={() => {
-            if (confirm('Replace this graph with the example? (undo can’t bring it back)')) replace(exampleGraph(registry));
+        <button className="btn" title={`start over from the ${DEFAULT_EXAMPLE.label.toLowerCase()} scene (undo to go back)`} onClick={() => {
+            loadExample(DEFAULT_EXAMPLE.id);
+            requestAnimationFrame(() => canvas.fit());
         }}>reset</button>
         <span className="graph-status">{status}</span>
+        <ExamplesMenu />
     </nav>
 ) as HTMLElement;
 

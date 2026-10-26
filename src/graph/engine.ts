@@ -112,10 +112,18 @@ export class Engine {
 
     fit(): void {
         let minX = Infinity, minY = Infinity, maxX = -Infinity, maxY = -Infinity;
+        // a long fixed floor or wall shouldn't zoom the interesting parts down to specks:
+        // it only counts vertically (as in the original apparatus)
+        const huge = 24 * 32;
         for (const data of this.scene?.entities ?? []) {
             const ext = data.shape === 'ball' ? data.r : Math.hypot(data.w, data.h) / 2;
-            minX = Math.min(minX, data.x - ext); maxX = Math.max(maxX, data.x + ext);
             minY = Math.min(minY, data.y - ext); maxY = Math.max(maxY, data.y + ext);
+            if (data.body?.fixed && data.shape === 'box' && data.w > huge) continue;
+            minX = Math.min(minX, data.x - ext); maxX = Math.max(maxX, data.x + ext);
+        }
+        if (!Number.isFinite(minX) && Number.isFinite(minY)) {
+            minX = -huge / 2;
+            maxX = huge / 2;
         }
         if (!Number.isFinite(minX)) {
             this.camera.target.set(0, 0, 0);

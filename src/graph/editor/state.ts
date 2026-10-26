@@ -1,11 +1,11 @@
 import { Signal } from '@n3rdw1z4rd/smoke-ui';
 import {
-    GraphEvaluator, createNodeRegistry, normalizeGraph, type FrameInfo, type GraphDoc, type NodeResult,
+    GraphEvaluator, createGraph, createNodeRegistry, normalizeGraph, type FrameInfo, type GraphDoc, type NodeResult,
 } from '@n3rdw1z4rd/core/graph';
 import { EVAL_HANG_MS, GraphWorker } from '../eval-client';
 import type { NodeInterface } from '../eval-protocol';
 import { registerSceneNodes } from '../scene-nodes';
-import { exampleGraph } from './example';
+import { DEFAULT_EXAMPLE, EXAMPLES } from './examples';
 
 /* ------------------------------------------------------------------ */
 /* Editor state. The graph document is a plain object, mutated in       */
@@ -23,7 +23,7 @@ registerSceneNodes(registry);
 /** used here only for `animated()` (which reads interfaces); evaluation happens in the worker */
 const interfaces = new GraphEvaluator(registry);
 
-export let doc: GraphDoc = exampleGraph(registry);
+export let doc: GraphDoc = createGraph();
 
 /** bumped on every change to the document (structure, values, positions) */
 export const docRevision = new Signal(0);
@@ -72,6 +72,7 @@ export function edit(label: string, change: (doc: GraphDoc) => void): void {
 export function undo(): void {
     const prev = undoStack.pop();
     if (!prev) return;
+    status.set('');
     redoStack.push(JSON.stringify(doc));
     replace(JSON.parse(prev), false);
 }
@@ -79,8 +80,29 @@ export function undo(): void {
 export function redo(): void {
     const next = redoStack.pop();
     if (!next) return;
+    status.set('');
     undoStack.push(JSON.stringify(doc));
     replace(JSON.parse(next), false);
+}
+
+/**
+ * Opens another document as one undoable step (examples, reset): undo goes back to what
+ * you had.
+ */
+export function openDocument(next: GraphDoc, trusted: boolean): void {
+    undoStack.push(JSON.stringify(doc));
+    if (undoStack.length > 200) undoStack.shift();
+    redoStack.length = 0;
+    scriptsTrusted.set(trusted || !Object.keys(next.scripts ?? {}).length);
+    replace(next, false);
+}
+
+/** Loads a built-in example (its script nodes are ours, so they're trusted). */
+export function loadExample(id: string): void {
+    const ex = EXAMPLES.find((e) => e.id === id);
+    if (!ex) return;
+    openDocument(ex.make(registry), true);
+    status.set(`example: ${ex.label} — ${ex.description} (undo to go back)`);
 }
 
 /** Swaps in another document (load, import, undo). */
@@ -243,7 +265,7 @@ function scheduleSave(): void {
     }, 400);
 }
 
-/** Loads the autosaved graph (your own, so its scripts are trusted), or the example. */
+/** Loads the autosaved graph (your own, so its scripts are trusted), or the default example. */
 export function boot(): void {
     try {
         const saved = localStorage.getItem(SAVE_KEY);
@@ -252,7 +274,7 @@ export function boot(): void {
             return;
         }
     } catch { /* fall through to the example */ }
-    replace(exampleGraph(registry));
+    replace(DEFAULT_EXAMPLE.make(registry));
 }
 
 /** Loads a graph from a file; its scripts wait for trust. */

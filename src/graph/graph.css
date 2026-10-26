@@ -61,6 +61,7 @@ html, body, #root {
 
 .graph-brand { color: var(--fg); font-weight: 600; text-decoration: none; }
 .graph-brand.muted { color: var(--muted); font-weight: 400; margin-right: 8px; }
+.graph-examples { padding-right: 6px; appearance: auto; }
 .graph-status { margin-left: auto; color: var(--muted); overflow: hidden; text-overflow: ellipsis; white-space: nowrap; max-width: 50%; }
 
 .btn {
