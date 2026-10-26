@@ -84,3 +84,16 @@ next evaluation (no backlog). **Watchdog:** a request unanswered for 3 s replace
 and pauses script nodes (banner → fix the script, save, *resume*); built-in nodes keep
 evaluating meanwhile. Outputs that aren't plain data (functions, class instances) become a
 node error instead of breaking the reply.
+
+### Behaviours
+
+A **behaviour node is a module that exports `step`** (and maybe `setup`) besides its interface
+(core: a module with `step` and no `run` gets `behaviorRun`, which packs its inputs, params and
+source into a `BehaviorValue`). **Behave** attaches behaviour values to an entity; when the
+viewport plays, the engine sends them with the bodies to the physics worker, which imports each
+module once and calls `step(self, world, dt, params, state)` every physics step. The API is in
+editor coordinates (+y up, degrees) through views over the worker's handles; `world.spawn(entity)`
+takes graph entities (their own behaviours come along); the viewport drives `world.pointer` while
+playing (left-drag grabs and throws bodies; right / middle drag pans). A behaviour that throws is
+switched off on that body and its node turns red until the next play. Built-ins: Push, Fan,
+Attract, Follow Pointer, Spawner (each forkable with ✎). Examples: Fan, Dropper, Magnet.

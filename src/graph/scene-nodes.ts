@@ -1,4 +1,5 @@
-import { portTypes, type NodeRegistry, type NodeSpec } from '@n3rdw1z4rd/core/graph';
+import { portTypes, type BehaviorValue, type NodeRegistry, type NodeSpec } from '@n3rdw1z4rd/core/graph';
+import { BEHAVIOR_NODES } from './behaviors';
 import { PALETTE, PART_DEFAULTS } from '../core/scene';
 import { SCENE_SOURCES } from './scene-sources';
 
@@ -30,6 +31,8 @@ export interface EntityData {
     tag: string;
     /** simulated by the physics when play starts; without one it only draws (and can animate) */
     body: BodyData | null;
+    /** behaviours (from Behave): they run on the body while playing */
+    behaviors?: BehaviorValue[];
 }
 
 export interface SceneData {
@@ -47,6 +50,7 @@ const isEntity = (v: any): v is EntityData => !!v && typeof v === 'object' && ty
 
 portTypes.define('entity', '#d3d3d3');
 portTypes.define('scene', '#f4d35e');
+portTypes.define('behavior', '#ff7f9f');
 
 export const SCENE_NODES: NodeSpec[] = [
     {
@@ -175,4 +179,5 @@ function entity(id: string, shape: 'box' | 'ball', at: Vec2, angle: number, size
 export function registerSceneNodes(registry: NodeRegistry): void {
     // each carries its source (a script module) so the editor can show and fork it
     for (const spec of SCENE_NODES) registry.register({ ...spec, source: spec.source ?? SCENE_SOURCES[spec.type] });
+    for (const spec of BEHAVIOR_NODES) registry.register(spec);
 }

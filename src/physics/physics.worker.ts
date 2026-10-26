@@ -4,7 +4,7 @@ import type { RigidBody, World } from '@dimforge/rapier2d';
 import { Rng } from '@n3rdw1z4rd/core';
 import { normalizePart, PART_DEFAULTS, PX_PER_M, type PartDef } from '../core/scene';
 import { compileScript, describeError, type ScriptHooks } from '../core/script';
-import { SPAWN_ID_BASE, type FromWorker, type PointerMsg, type ToWorker, type Vec2 } from './protocol';
+import { SPAWN_ID_BASE, type BehaviorRef, type FromWorker, type PointerMsg, type ToWorker, type Vec2 } from './protocol';
 
 /*
  * Rapier and scene scripts live here, off the main thread. A script that
@@ -85,6 +85,12 @@ class BodyHandle {
         this.rb.applyImpulse({ x: (m * ax / P) * dt, y: (m * ay / P) * dt }, true);
     }
 
+    /** Sets the angular velocity, radians/s (clockwise, like this side's angles). */
+    setAngularVelocity(w: number): void {
+        if (this.fixed || !this.alive) return;
+        this.rb.setAngvel(w, true);
+    }
+
     /** Changes the velocity by (dvx, dvy) px/s right away. */
     impulse(dvx: number, dvy: number): void {
         if (this.fixed || !this.alive) return;
@@ -114,6 +120,142 @@ class BodyHandle {
 }
 
 const handles = new Map<number, BodyHandle>(); // rapier handle -> body
+
+/* ------------------------------------------------------------------ */
+/* Behaviours (from the node graph). Their API is in editor            */
+/* coordinates — +y up, angles in degrees counter-clockwise — so these  */
+/* views flip what the handles say (+y down, radians clockwise).        */
+/* ------------------------------------------------------------------ */
+
+interface BehaviorModule {
+    step?: (self: unknown, world: unknown, dt: number, params: unknown, state: object) => void;
+    setup?: (self: unknown, world: unknown, params: unknown, state: object) => void;
+}
+
+interface Running {
+    ref: BehaviorRef;
+    mod: BehaviorModule;
+    state: object;
+    off: boolean;
+}
+
+/** body handle → its running behaviours */
+const behaviors = new Map<BodyHandle, Running[]>();
+/** compiled behaviour modules, by source */
+const modules = new Map<string, Promise<BehaviorModule>>();
+let behaviorErrors: { node: string; type: string; message: string }[] = [];
+
+function behaviorModule(source: string): Promise<BehaviorModule> {
+    let m = modules.get(source);
+    if (!m) {
+        const url = URL.createObjectURL(new Blob([source], { type: 'text/javascript' }));
+        m = import(/* @vite-ignore */ url).finally(() => URL.revokeObjectURL(url)) as Promise<BehaviorModule>;
+        modules.set(source, m);
+    }
+    return m;
+}
+
+const views = new WeakMap<BodyHandle, object>();
+
+/** A body as behaviours see it (+y up, degrees counter-clockwise). */
+function view(b: BodyHandle): object {
+    let v = views.get(b);
+    if (v) return v;
+    v = {
+        get id() { return b.id; },
+        get tag() { return b.tag; },
+        get shape() { return b.shape; },
+        get w() { return b.w; },
+        get h() { return b.h; },
+        get r() { return b.r; },
+        get fixed() { return b.fixed; },
+        get alive() { return b.alive; },
+        get x() { return b.x; },
+        get y() { return -b.y; },
+        get angle() { return (-b.angle * 180) / Math.PI; },
+        get vx() { return b.vx; },
+        get vy() { return -b.vy; },
+        accelerate: (ax: number, ay: number) => b.accelerate(ax, -ay),
+        impulse: (dvx: number, dvy: number) => b.impulse(dvx, -dvy),
+        setVelocity: (vx: number, vy: number) => b.setVelocity(vx, -vy),
+        spin: (degreesPerSecond: number) => b.setAngularVelocity((-degreesPerSecond * Math.PI) / 180),
+        moveTo: (x: number, y: number) => b.moveTo(x, -y),
+        remove: () => b.remove(),
+    };
+    views.set(b, v);
+    return v;
+}
+
+/** An entity from the graph (+y up, degrees) → a part (+y down, radians). */
+function partOfEntity(e: any): PartDef | null {
+    if (!e || (e.shape !== 'box' && e.shape !== 'ball')) return null;
+    return normalizePart({
+        shape: e.shape, x: e.x, y: -e.y, angle: -((e.angle ?? 0) * Math.PI) / 180,
+        w: e.w, h: e.h, r: e.r, color: e.color, tag: e.tag || undefined,
+        fixed: e.body?.fixed, friction: e.body?.friction, bounce: e.body?.bounce, density: e.body?.density,
+    });
+}
+
+const behaviorWorld = {
+    get bodies() { return [...handles.values()].map(view); },
+    find(tag: string) { return [...handles.values()].filter((b) => b.tag === tag).map(view); },
+    /** spawns an entity (as the graph makes them; its own behaviours come along) */
+    spawn(entity: any): object | null {
+        const part = partOfEntity(entity);
+        if (!part) return null;
+        const body = worldApi.spawn(part);
+        if (!body) return null;
+        if (Array.isArray(entity.behaviors) && entity.behaviors.length) void attachBehaviors(body, entity.behaviors, true);
+        return view(body);
+    },
+    get gravity(): Vec2 {
+        const g = worldApi.gravity;
+        return { x: g.x, y: -g.y };
+    },
+    set gravity(g: Vec2) {
+        worldApi.gravity = { x: g?.x, y: -g?.y };
+    },
+    get pointer() {
+        const p = worldApi.pointer;
+        return { ...p, y: -p.y };
+    },
+    get time() { return time; },
+    get frame() { return frame; },
+    get rng() { return rng; },
+};
+
+function behaviorFailed(r: Running, err: unknown): void {
+    r.off = true;
+    behaviorErrors.push({ node: r.ref.node, type: r.ref.type, message: describeError(err) });
+}
+
+/** Compiles (once per source) and attaches behaviours; `setup` runs right away. */
+async function attachBehaviors(body: BodyHandle, refs: BehaviorRef[], runSetup: boolean): Promise<void> {
+    const list: Running[] = [];
+    for (const ref of refs) {
+        if (!ref || typeof ref.source !== 'string') continue;
+        const r: Running = { ref, mod: {}, state: {}, off: false };
+        try {
+            r.mod = await behaviorModule(ref.source);
+        } catch (err) {
+            behaviorFailed(r, err);
+        }
+        list.push(r);
+    }
+    if (!body.alive) return;
+    behaviors.set(body, [...(behaviors.get(body) ?? []), ...list]);
+    if (runSetup) for (const r of list) runOne(body, r, 'setup', 0);
+}
+
+function runOne(body: BodyHandle, r: Running, hook: 'setup' | 'step', dt: number): void {
+    if (r.off) return;
+    try {
+        if (hook === 'setup') r.mod.setup?.(view(body), behaviorWorld, r.ref.params, r.state);
+        else r.mod.step?.(view(body), behaviorWorld, dt, r.ref.params, r.state);
+    } catch (err) {
+        behaviorFailed(r, err);
+    }
+}
 
 function currentDt(): number {
     return (1 / STEP_HZ) * timeScale;
@@ -193,6 +335,7 @@ function freeWorld(): void {
     clearInterval(timer);
     timer = 0;
     handles.clear();
+    behaviors.clear();
     world?.free();
     world = null;
     hooks = null;
@@ -214,7 +357,17 @@ async function play(msg: Extract<ToWorker, { t: 'play' }>): Promise<void> {
     removed = [];
     scriptError = undefined;
 
-    for (const b of msg.bodies) createBody(b.id, b.part);
+    behaviorErrors = [];
+    const withBehaviors: [BodyHandle, BehaviorRef[]][] = [];
+    for (const b of msg.bodies) {
+        const body = createBody(b.id, b.part);
+        if (body && b.behaviors?.length) withBehaviors.push([body, b.behaviors]);
+    }
+    // compile every behaviour before the first step; then setup, in body order
+    for (const [body, refs] of withBehaviors) await attachBehaviors(body, refs, false);
+    if (token !== playToken) return;
+    for (const b of handles.values()) b.sync();
+    for (const [body, list] of behaviors) for (const r of list) runOne(body, r, 'setup', 0);
 
     if (msg.script) {
         try {
@@ -266,6 +419,17 @@ function stepOnce(): void {
         }
     }
 
+    if (behaviors.size) {
+        for (const b of handles.values()) b.sync();
+        for (const [body, list] of behaviors) {
+            if (!body.alive) {
+                behaviors.delete(body);
+                continue;
+            }
+            for (const r of list) runOne(body, r, 'step', dt);
+        }
+    }
+
     applyGrab();
 
     world.timestep = dt;
@@ -302,11 +466,13 @@ function sendFrame(stepMs: number): void {
         t: 'frame', data, time, frame, stepMs,
         spawned, removed,
         scriptError,
+        ...(behaviorErrors.length ? { behaviorErrors } : {}),
     }, [data.buffer]);
 
     spawned = [];
     removed = [];
     scriptError = undefined;
+    behaviorErrors = [];
 }
 
 /* ------------------------------------------------------------------ */

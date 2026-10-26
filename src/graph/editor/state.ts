@@ -35,6 +35,8 @@ export const typesRevision = new Signal(0);
 export const results = new Signal<Map<string, NodeResult>>(new Map());
 export const selection = new Signal<Set<string>>(new Set());
 export const status = new Signal('');
+/** behaviours that threw while playing, by node id (cleared when play starts again) */
+export const runtimeErrors = new Signal<Map<string, string>>(new Map());
 /** scripts in a loaded graph wait for this before they compile */
 export const scriptsTrusted = new Signal(true);
 /** set when the worker was replaced because it stopped responding: scripts wait for `resumeScripts()` */

@@ -271,6 +271,80 @@ function spiral(registry: NodeRegistry): GraphDoc {
     return g;
 }
 
+/* ── behaviours ──────────────────────────────────────────────────── */
+
+/** shape → Behave (with the given behaviour nodes) → Rigid Body */
+function behaving(b: ReturnType<typeof builder>, shape: Node, behaviors: Node[], x: number, y: number, body: Record<string, unknown> = {}) {
+    const behave = b.add('behavior/behave', x, y);
+    b.link(shape, 'entity', behave, 'entity');
+    for (const n of behaviors) b.link(n, 'behavior', behave, 'behaviors');
+    return b.body(behave, x + 250, y, body);
+}
+
+/** the fan scene from the original apparatus: a fan blows a pile of light balls at a wall */
+function fan(registry: NodeRegistry): GraphDoc {
+    const b = builder(registry);
+    const { add, link, body, output } = b;
+    const fanBox = add('shape/box', 0, 0, { at: { x: -14 * G, y: -6 * G }, size: { x: G, y: 3 * G }, color: '#3fd1a4' });
+    const blow = add('behavior/fan', 0, 230, { strength: 1800, reach: 400 });
+    const theFan = behaving(b, fanBox, [blow], 250, 0, { fixed: true });
+
+    const pile = add('list/grid2d', 0, 460, { cols: 4, rows: 3, spacing: { x: G, y: G }, center: { x: -8.5 * G, y: -5 * G } });
+    const ball = add('shape/ball', 250, 460, { radius: G / 3, color: '#f4d35e' });
+    link(pile, 'points', ball, 'at');
+    const balls = body(ball, 500, 460, { density: 0.3 });
+
+    const floor = body(add('shape/box', 250, 700, { at: { x: 0, y: -8 * G }, size: { x: 64 * G, y: G }, color: FIXED }), 500, 700, { fixed: true });
+    const wall = body(add('shape/box', 250, 930, { at: { x: 4 * G, y: -4 * G }, size: { x: G, y: 7 * G }, color: FIXED }), 500, 930, { fixed: true });
+    output(1000, 400, [theFan, balls, floor, wall]);
+    return b.g;
+}
+
+/** plinko with a Spawner nozzle that keeps dropping colored balls */
+function dropper(registry: NodeRegistry): GraphDoc {
+    const b = builder(registry);
+    const { add, link, body, output } = b;
+    const pegGrid = add('list/grid2d', 0, 0, { cols: 13, rows: 7, spacing: { x: 40, y: 40 }, center: { x: 0, y: 20 }, stagger: true });
+    const peg = add('shape/ball', 250, 0, { radius: 4, color: FIXED });
+    link(pegGrid, 'points', peg, 'at');
+    const pegs = body(peg, 500, 0, { fixed: true });
+    const floor = body(add('shape/box', 250, 230, { at: { x: 0, y: -200 }, size: { x: 620, y: 20 }, color: FIXED }), 500, 230, { fixed: true });
+
+    // what to drop: a ball with a body (the Spawner copies it)
+    const drop = add('shape/ball', 0, 460, { radius: 7, color: '#f2a541' });
+    const dropBody = body(drop, 250, 460, { bounce: 0.35 });
+    const spawn = add('behavior/spawner', 500, 460, { every: 0.2, max: 250, jitter: 30 });
+    link(dropBody, 'entity', spawn, 'template');
+
+    const nozzle = add('shape/box', 500, 760, { at: { x: 0, y: 290 }, size: { x: 48, y: 12 }, color: '#3fd1a4' });
+    const theNozzle = behaving(b, nozzle, [spawn], 750, 760, { fixed: true });
+    output(1250, 300, [pegs, floor, theNozzle]);
+    return b.g;
+}
+
+/** drag the big ball around while playing: it pulls the others toward it */
+function magnet(registry: NodeRegistry): GraphDoc {
+    const b = builder(registry);
+    const { add, link, body, output } = b;
+    const big = add('shape/ball', 0, 0, { at: { x: 0, y: 0 }, radius: 28, color: '#e8554e' });
+    const follow = add('behavior/follow-pointer', 0, 200, { stiffness: 10 });
+    const pull = add('behavior/attract', 0, 420, { strength: 2400, radius: 260 });
+    const theMagnet = behaving(b, big, [follow, pull], 250, 0, { density: 5 });
+
+    const xs = add('list/random', 0, 650, { count: 70, min: -280, max: 280, seed: 7 });
+    const ys = add('list/random', 0, 880, { count: 70, min: -160, max: 220, seed: 8 });
+    const at = add('value/vec2', 250, 650);
+    link(xs, 'numbers', at, 'x');
+    link(ys, 'numbers', at, 'y');
+    const bead = add('shape/ball', 500, 650, { radius: 7, color: '#4ea8de' });
+    link(at, 'vec', bead, 'at');
+    const beads = body(bead, 750, 650, { bounce: 0.2 });
+
+    const floor = body(add('shape/box', 500, 900, { at: { x: 0, y: -260 }, size: { x: 760, y: 20 }, color: FIXED }), 750, 900, { fixed: true });
+    output(1250, 300, [theMagnet, beads, floor], { gravity: { x: 0, y: -4 } });
+    return b.g;
+}
+
 export const EXAMPLES: Example[] = [
     { id: 'sandbox', label: 'Sandbox', description: 'the original apparatus scene', make: sandbox },
     { id: 'plinko', label: 'Plinko', description: 'pegs from a staggered grid, balls to drop, an animated spinner', make: plinko },
@@ -279,6 +353,9 @@ export const EXAMPLES: Example[] = [
     { id: 'wave', label: 'Wave', description: 'animation only: time + broadcasting moves a row of boxes', make: wave },
     { id: 'rain', label: 'Rain', description: 'seeded random positions and sizes, two ramps', make: rain },
     { id: 'spiral', label: 'Spiral', description: 'a script node lays the pegs out on a spiral', make: spiral },
+    { id: 'fan', label: 'Fan', description: 'behaviours: a fan blows light balls at a wall (the original apparatus fan)', make: fan },
+    { id: 'dropper', label: 'Dropper', description: 'behaviours: a Spawner nozzle keeps dropping balls through plinko pegs', make: dropper },
+    { id: 'magnet', label: 'Magnet', description: 'behaviours: drag the red ball while playing — it pulls the others in', make: magnet },
 ];
 
 export const DEFAULT_EXAMPLE = EXAMPLES[0];

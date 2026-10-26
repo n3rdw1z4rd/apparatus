@@ -2,9 +2,19 @@ import type { PartDef } from '../core/scene';
 
 /* Messages between the main thread (PhysicsClient) and physics.worker.ts. */
 
+/** A behaviour attached to a body (see src/graph/behaviors.ts): its module runs in the worker. */
+export interface BehaviorRef {
+    type: string;
+    /** the graph node it came from (for error reports) */
+    node: string;
+    params: Record<string, unknown>;
+    source: string;
+}
+
 export interface BodyInit {
     id: number;
     part: PartDef;
+    behaviors?: BehaviorRef[];
 }
 
 export interface Vec2 {
@@ -51,6 +61,8 @@ export type FromWorker =
         removed: number[];
         /** set once when the running script failed and was stopped */
         scriptError?: string;
+        /** behaviours that threw and were switched off (on that body) */
+        behaviorErrors?: { node: string; type: string; message: string }[];
     }
     | { t: 'built'; id: number; parts?: PartDef[]; error?: string };
 

@@ -14,6 +14,7 @@ export interface FrameInfo {
     spawned: SpawnedBody[];
     removed: number[];
     scriptError?: string;
+    behaviorErrors?: { node: string; type: string; message: string }[];
 }
 
 /**

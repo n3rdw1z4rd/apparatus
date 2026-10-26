@@ -1,6 +1,7 @@
-import { EditorCamera, World, type ThreeEntity } from '@n3rdw1z4rd/core/three';
+import { EditorCamera, World, pickEntity, type ThreeEntity } from '@n3rdw1z4rd/core/three';
 import { Look, Meta, RigidBody, Shape } from '../core/components';
-import type { PartDef } from '../core/scene';
+import { normalizePart, type PartDef } from '../core/scene';
+import type { BehaviorRef } from '../physics/protocol';
 import { PhysicsClient, type FrameInfo } from '../physics/physics-client';
 import { Renderer } from '../render/renderer';
 import type { EntityData, SceneData } from './scene-nodes';
@@ -23,11 +24,17 @@ export class Engine {
     /** set by the host: called each frame before drawing (per-frame graph evaluation) */
     onFrame: (time: number, dt: number, frame: number) => void = () => {};
     onStateChange: (state: EngineState) => void = () => {};
+    /** behaviours that threw while playing (each is switched off on its body) */
+    onBehaviorError: (errors: { node: string; type: string; message: string }[]) => void = () => {};
 
     private scene: SceneData | null = null;
     private readonly byId = new Map<string, ThreeEntity>();
     private physics: PhysicsClient | null = null;
     private bodyIds = new Map<number, ThreeEntity>();
+    /** entities physics owns while playing */
+    private simulated = new Set<ThreeEntity>();
+    /** entities behaviours spawned while playing (gone on stop) */
+    private spawned = new Set<ThreeEntity>();
     private time = 0;
     private frame = 0;
     private fitted = false;
@@ -80,13 +87,16 @@ export class Engine {
         if (this.state === 'playing' || !this.scene) return;
         this.ensurePhysics();
         this.bodyIds.clear();
-        const bodies: { id: number; part: PartDef }[] = [];
+        this.simulated.clear();
+        const bodies: { id: number; part: PartDef; behaviors?: BehaviorRef[] }[] = [];
         let n = 1;
         for (const data of this.scene.entities) {
             const e = this.byId.get(data.id);
             if (!e || !data.body) continue;
             this.bodyIds.set(n, e);
-            bodies.push({ id: n++, part: toPart(data) });
+            this.simulated.add(e);
+            const behaviors = data.behaviors?.map(({ type, node, params, source }) => ({ type, node, params, source }));
+            bodies.push({ id: n++, part: toPart(data), ...(behaviors?.length ? { behaviors } : {}) });
         }
         const g = this.scene.gravity;
         // the worker speaks the legacy convention: +y down
@@ -100,6 +110,9 @@ export class Engine {
         if (this.state !== 'playing') return;
         this.physics?.stop();
         this.bodyIds.clear();
+        this.simulated.clear();
+        for (const e of this.spawned) this.world.remove(e);
+        this.spawned.clear();
         this.time = 0;
         this.frame = 0;
         this.setState('building');
@@ -148,11 +161,11 @@ export class Engine {
     }
 
     private isSimulated(e: ThreeEntity): boolean {
-        for (const b of this.bodyIds.values()) if (b === e) return true;
-        return false;
+        return this.simulated.has(e);
     }
 
     private apply(e: ThreeEntity, d: EntityData): void {
+        e.visible = true;
         e.position.set(d.x, d.y, 0);
         e.rotation.z = (d.angle * Math.PI) / 180;
         e.name = d.tag || d.id;
@@ -171,6 +184,19 @@ export class Engine {
         }
     }
 
+    /** A spawned body's part (+y down) → a drawn entity (+y up). */
+    private entityFromPart(raw: PartDef): ThreeEntity {
+        const part = normalizePart(raw)!;
+        const e = this.world.create(part.tag || 'spawned');
+        this.world.addComponent(e, Shape, { kind: part.shape, w: part.w ?? 32, h: part.h ?? 32, r: part.r ?? 16 });
+        this.world.addComponent(e, Look, { color: part.color ?? '#cccccc' });
+        this.world.addComponent(e, Meta, { tag: part.tag ?? '', spawned: true });
+        this.world.addComponent(e, RigidBody, { fixed: !!part.fixed });
+        e.position.set(part.x, -part.y, 0);
+        e.rotation.z = -(part.angle ?? 0);
+        return e;
+    }
+
     private ensurePhysics(): void {
         if (this.physics) return;
         this.physics = new PhysicsClient();
@@ -186,6 +212,24 @@ export class Engine {
 
     private applyFrame(f: FrameInfo): void {
         if (this.state !== 'playing') return;
+
+        // bodies behaviours spawned, and bodies that went away
+        for (const s of f.spawned) {
+            const e = this.entityFromPart(s.part);
+            this.bodyIds.set(s.id, e);
+            this.simulated.add(e);
+            this.spawned.add(e);
+        }
+        for (const id of f.removed) {
+            const e = this.bodyIds.get(id);
+            if (!e) continue;
+            this.bodyIds.delete(id);
+            this.simulated.delete(e);
+            if (this.spawned.delete(e)) this.world.remove(e);
+            else e.visible = false; // a scene entity: comes back on stop
+        }
+        if (f.behaviorErrors?.length) this.onBehaviorError(f.behaviorErrors);
+
         const d = f.data;
         for (let i = 0; i < d.length; i += 4) {
             const e = this.bodyIds.get(d[i]);
@@ -220,8 +264,25 @@ export class Engine {
         });
     }
 
+    /** The physics id of a simulated entity, or null. */
+    private bodyIdOf(e: ThreeEntity | null): number | null {
+        if (!e) return null;
+        for (const [id, b] of this.bodyIds) if (b === e) return id;
+        return null;
+    }
+
+    /** Tells the physics worker where the pointer is (world px; the worker is +y down). */
+    private sendPointer(sx: number, sy: number, down: boolean, active: boolean, grab: number | null): void {
+        if (this.state !== 'playing' || !this.physics) return;
+        const w = this.camera.screenToWorld(sx, sy, 0);
+        if (!w) return;
+        this.physics.setPointer({ x: w.x, y: -w.y, down, active, grab });
+    }
+
     /**
-     * Pan (drag), zoom (wheel / pinch), fit (double-click). Events don't reach the graph canvas.
+     * Building: drag pans. Playing: drag is the pointer — it grabs and throws bodies, and
+     * behaviours see it (world.pointer); right / middle drag and two fingers pan. Wheel and
+     * pinch zoom; double-click fits. Events don't reach the graph canvas.
      * Pointer coordinates are converted to the canvas's own px: the viewport may sit inside a
      * zoomed (CSS-scaled) node graph.
      */
@@ -236,18 +297,48 @@ export class Engine {
         const pointers = new Map<number, { x: number; y: number }>();
         let pinch = 0;
 
+        /** while playing: the pointer that drives the physics pointer (null: panning) */
+        let driving: number | null = null;
+        let grab: number | null = null;
+
         el.addEventListener('pointerdown', (ev) => {
             ev.stopPropagation();
             el.setPointerCapture(ev.pointerId);
             pointers.set(ev.pointerId, { x: ev.clientX, y: ev.clientY });
             pinch = 0;
+            if (this.state === 'playing' && ev.button === 0 && pointers.size === 1) {
+                const p = local(ev.clientX, ev.clientY);
+                const hit = pickEntity(this.world, this.camera, p.x, p.y, { slopPx: ev.pointerType === 'touch' ? 14 : 0 })?.entity ?? null;
+                const id = hit && !this.world.getComponent<RigidBody>(hit, RigidBody)?.fixed ? this.bodyIdOf(hit) : null;
+                driving = ev.pointerId;
+                grab = id;
+                this.sendPointer(p.x, p.y, true, true, grab);
+            } else if (driving !== null) {
+                // a second finger: let go, and pan / pinch instead
+                const p = local(ev.clientX, ev.clientY);
+                this.sendPointer(p.x, p.y, false, true, null);
+                driving = null;
+                grab = null;
+            }
         });
         el.addEventListener('pointermove', (ev) => {
             const prev = pointers.get(ev.pointerId);
-            if (!prev) return;
+            if (!prev) {
+                // hovering (mouse): behaviours can follow it
+                if (this.state === 'playing' && ev.pointerType === 'mouse') {
+                    const p = local(ev.clientX, ev.clientY);
+                    this.sendPointer(p.x, p.y, false, true, null);
+                }
+                return;
+            }
             ev.stopPropagation();
             const cur = { x: ev.clientX, y: ev.clientY };
             pointers.set(ev.pointerId, cur);
+            if (driving === ev.pointerId) {
+                const p = local(cur.x, cur.y);
+                this.sendPointer(p.x, p.y, true, true, grab);
+                return;
+            }
             if (pointers.size === 1) {
                 const k = scale();
                 this.camera.pan((cur.x - prev.x) / k, (cur.y - prev.y) / k);
@@ -262,7 +353,19 @@ export class Engine {
         const up = (ev: PointerEvent) => {
             pointers.delete(ev.pointerId);
             pinch = 0;
+            if (driving === ev.pointerId) {
+                const p = local(ev.clientX, ev.clientY);
+                this.sendPointer(p.x, p.y, false, ev.pointerType === 'mouse', null);
+                driving = null;
+                grab = null;
+            }
         };
+        el.addEventListener('pointerleave', (ev) => {
+            if (ev.pointerType !== 'mouse' || driving !== null) return;
+            const p = local(ev.clientX, ev.clientY);
+            this.sendPointer(p.x, p.y, false, false, null);
+        });
+        el.addEventListener('contextmenu', (ev) => ev.preventDefault());
         el.addEventListener('pointerup', up);
         el.addEventListener('pointercancel', up);
         el.addEventListener('wheel', (ev) => {

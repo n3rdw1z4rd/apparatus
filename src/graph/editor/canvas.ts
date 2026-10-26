@@ -9,7 +9,7 @@ import { h, svg } from './dom';
 import { openNodeMenu } from './menu';
 import { openScriptPanel } from './script-panel';
 import {
-    adjustLayout, doc, docEpoch, docRevision, edit, evaluateFrame, isAnimated, isScriptType, redo, registry, results, scriptsSuspended,
+    adjustLayout, doc, docEpoch, docRevision, edit, evaluateFrame, runtimeErrors, status, isAnimated, isScriptType, redo, registry, results, scriptsSuspended,
     scriptsTrusted, selection, typesRevision, undo,
 } from './state';
 import { hasWidget, preview, widget } from './widgets';
@@ -40,7 +40,7 @@ const STATE_TEXT: Record<NodeState, string> = {
 
 const CATEGORY_COLORS: Record<string, string> = {
     value: '#3fd1a4', math: '#4ea8de', vec2: '#4ea8de', list: '#9b6dde', shape: '#f2a541',
-    physics: '#e8554e', scene: '#f4d35e', output: '#e86fb0', scripts: '#d3d3d3',
+    physics: '#e8554e', scene: '#f4d35e', output: '#e86fb0', scripts: '#d3d3d3', behavior: '#ff7f9f', custom: '#d3d3d3',
 };
 
 interface NodeView {
@@ -104,6 +104,7 @@ export class GraphCanvas {
         typesRevision.subscribe(() => this.render(true));
         results.subscribe(() => this.showResults());
         scriptsSuspended.subscribe(() => this.showResults());
+        runtimeErrors.subscribe(() => this.showResults());
         selection.subscribe(() => {
             this.markSelection();
             this.showSelbar();
@@ -533,6 +534,9 @@ export class GraphCanvas {
             } else if (r.error) {
                 state = 'error';
                 text = r.error;
+            } else if (runtimeErrors.get().has(id)) {
+                state = 'error';
+                text = `while playing: ${runtimeErrors.get().get(id)}`;
             } else {
                 state = r.ms >= (animated ? SLOW_ANIMATED_MS : SLOW_MS) ? 'slow' : 'ok';
                 const parts: string[] = [];
@@ -804,7 +808,16 @@ export class GraphCanvas {
             vp = { host, engine, playBtn };
             const v = vp;
             playBtn.onclick = () => (engine.state === 'playing' ? engine.stop() : engine.play());
+            engine.onBehaviorError = (errors) => {
+                const next = new Map(runtimeErrors.get());
+                for (const e of errors) next.set(e.node, e.message);
+                runtimeErrors.set(next);
+                const first = errors[0];
+                const n = getNode(doc, first.node);
+                status.set(`${n ? (n.title ?? registry.get(n.type)?.title ?? n.type) : first.type} failed while playing and was switched off on that entity: ${first.message}`);
+            };
             engine.onStateChange = (s) => {
+                if (s === 'playing' && runtimeErrors.get().size) runtimeErrors.set(new Map());
                 // the node's button, and its full-screen twin if open
                 for (const b of [v.playBtn, ...document.querySelectorAll<HTMLElement>(`.viewport-full[data-node="${node.id}"] .vp-play`)]) {
                     b.textContent = s === 'playing' ? '■' : '▶';
