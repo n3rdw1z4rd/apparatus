@@ -1,7 +1,8 @@
 import {
     addNode, canConnect, connect, disconnect, getNode, graphId, linksInto, portTypes, removeNode,
-    type GraphNode, type NodeDef, type PortRef,
+    type GraphGroup, type GraphNode, type NodeDef, type PortRef,
 } from '@n3rdw1z4rd/core/graph';
+import { makeClip, parseClip, pasteClip, type Clip } from './clipboard';
 import { Engine } from '../engine';
 import type { SceneData } from '../scene-nodes';
 import { h, svg } from './dom';
@@ -59,7 +60,15 @@ type Drag =
     | { kind: 'pan'; last: { x: number; y: number } }
     | { kind: 'nodes'; last: { x: number; y: number }; moved: boolean }
     | { kind: 'wire'; from: PortRef; path: SVGPathElement; color: string }
-    | { kind: 'resize'; node: string; start: { x: number; y: number }; size: [number, number] };
+    | { kind: 'resize'; node: string; start: { x: number; y: number }; size: [number, number] }
+    /** a selection box: from `start` (client px); `base` is what was selected before (shift adds) */
+    | { kind: 'box'; start: { x: number; y: number }; base: Set<string>; el: HTMLElement }
+    /** moving a group by its header: the group and the nodes inside it */
+    | { kind: 'group'; id: string; last: { x: number; y: number }; members: string[]; moved: boolean }
+    | { kind: 'group-resize'; id: string; start: { x: number; y: number }; rect: [number, number, number, number] };
+
+/** frame colors for groups (muted, like a smoked panel) */
+const GROUP_COLORS = ['#3a4a3a', '#3a3f52', '#523a3a', '#524a32', '#45385a', '#2f4f52', '#3a3a3a'];
 
 export class GraphCanvas {
     readonly el: HTMLElement;
@@ -73,13 +82,21 @@ export class GraphCanvas {
     private readonly pointers = new Map<number, { x: number; y: number }>();
     private pinchDist = 0;
     private wiresQueued = false;
+    private readonly groupViews = new Map<string, HTMLElement>();
+    private readonly selbar: HTMLElement;
+    /** the last pointer position over the canvas (graph units): where paste puts things */
+    private pointer: [number, number] = [0, 0];
+    /** what was copied last (a fallback when the system clipboard isn't available) */
+    private clip: Clip | null = null;
+    private longPress = 0;
     /** nodes change size as fonts load and widgets settle: their pins move, so the wires follow */
     private readonly nodeSizes = new ResizeObserver(() => this.drawWires());
 
     constructor() {
         this.wires = svg('svg', { class: 'graph-wires' });
         this.layer = h('div', { className: 'graph-layer' }, this.wires as unknown as Node);
-        this.el = h('div', { className: 'graph', tabIndex: 0 }, this.layer);
+        this.selbar = h('div', { className: 'graph-selbar', hidden: true });
+        this.el = h('div', { className: 'graph', tabIndex: 0 }, this.layer, this.selbar);
 
         this.attachInput();
         docRevision.subscribe(() => this.render());
@@ -87,7 +104,10 @@ export class GraphCanvas {
         typesRevision.subscribe(() => this.render(true));
         results.subscribe(() => this.showResults());
         scriptsSuspended.subscribe(() => this.showResults());
-        selection.subscribe(() => this.markSelection());
+        selection.subscribe(() => {
+            this.markSelection();
+            this.showSelbar();
+        });
         new ResizeObserver(() => this.drawWires()).observe(this.el);
         void document.fonts?.ready.then(() => this.drawWires());
         this.applyView();
@@ -185,9 +205,201 @@ export class GraphCanvas {
                 if (host) host.style.height = `${node.size[1]}px`;
             }
         }
+        this.renderGroups();
         this.markSelection();
+        this.showSelbar();
         this.showResults();
         this.drawWires();
+    }
+
+    /* ── groups ────────────────────────────────────────────────── */
+
+    private renderGroups(): void {
+        const groups = doc.groups ?? [];
+        const alive = new Set(groups.map((g) => g.id));
+        for (const [id, el] of this.groupViews) {
+            if (alive.has(id)) continue;
+            el.remove();
+            this.groupViews.delete(id);
+        }
+        for (const g of groups) {
+            let el = this.groupViews.get(g.id);
+            const key = `${g.title}|${g.color}`;
+            if (!el || el.dataset.key !== key) {
+                const next = this.buildGroup(g);
+                next.dataset.key = key;
+                if (el) el.replaceWith(next);
+                else this.layer.prepend(next); // under the wires and nodes
+                el = next;
+                this.groupViews.set(g.id, el);
+            }
+            const [x, y, w, ht] = g.rect;
+            el.style.transform = `translate(${x}px, ${y}px)`;
+            el.style.width = `${w}px`;
+            el.style.height = `${ht}px`;
+        }
+    }
+
+    private buildGroup(g: GraphGroup): HTMLElement {
+        const title = h('span', { className: 'ggroup-title', title: 'double-click to rename' }, g.title);
+        const rename = () => {
+            const input = h('input', { className: 'gw-text ggroup-rename', value: g.title });
+            title.replaceWith(input);
+            input.focus();
+            input.select();
+            let done = false;
+            const commit = (save: boolean) => {
+                if (done) return;
+                done = true;
+                const v = input.value.trim();
+                if (save && v && v !== g.title) edit('group title', (d) => { this.groupById(d, g.id)!.title = v.slice(0, 60); });
+                else input.replaceWith(title);
+            };
+            input.addEventListener('keydown', (ev) => {
+                ev.stopPropagation();
+                if (ev.key === 'Enter') commit(true);
+                if (ev.key === 'Escape') commit(false);
+            });
+            input.addEventListener('blur', () => commit(true));
+        };
+        const head = h('header', { className: 'ggroup-head' },
+            title,
+            h('button', {
+                className: 'gnode-btn ggroup-swatch', title: 'change color', style: { background: g.color },
+                onclick: () => edit('group color', (d) => {
+                    const gr = this.groupById(d, g.id)!;
+                    gr.color = GROUP_COLORS[(GROUP_COLORS.indexOf(gr.color) + 1) % GROUP_COLORS.length];
+                }),
+            }),
+            h('button', { className: 'gnode-btn', title: 'remove the group (keeps its nodes)', onclick: () => this.ungroup(g.id) }, '×'));
+        // the header drags the group (capturing the pointer), so a double-click is spotted here:
+        // the second press of one renames instead of dragging
+        let lastDown = 0;
+        head.addEventListener('pointerdown', (e) => {
+            const now = performance.now();
+            const second = now - lastDown < 350 && !(e.target as HTMLElement).closest('button, input');
+            lastDown = now;
+            if (second) {
+                e.stopPropagation();
+                e.preventDefault();
+                lastDown = 0;
+                rename();
+                return;
+            }
+            this.startGroupDrag(e, g.id);
+        });
+        const grip = h('div', { className: 'gnode-resize ggroup-resize', title: 'resize' });
+        grip.addEventListener('pointerdown', (e) => {
+            e.stopPropagation();
+            e.preventDefault();
+            const gr = this.groupById(doc, g.id);
+            if (!gr) return;
+            this.drag = { kind: 'group-resize', id: g.id, start: { x: e.clientX, y: e.clientY }, rect: [...gr.rect] };
+            this.el.setPointerCapture(e.pointerId);
+        });
+        return h('div', { className: 'ggroup', dataset: { group: g.id }, style: { '--group': g.color } as any }, head, grip);
+    }
+
+    private groupById(d: typeof doc, id: string): GraphGroup | undefined {
+        return d.groups?.find((g) => g.id === id);
+    }
+
+    /** A node's rectangle (graph units). */
+    private nodeRect(n: GraphNode): [number, number, number, number] {
+        const el = this.views.get(n.id)?.el;
+        return [n.pos[0], n.pos[1], el?.offsetWidth ?? 200, el?.offsetHeight ?? 100];
+    }
+
+    /** The nodes inside a group's rectangle (their centers). */
+    private groupMembers(g: GraphGroup): string[] {
+        const [gx, gy, gw, gh] = g.rect;
+        return doc.nodes.filter((n) => {
+            const [x, y, w, ht] = this.nodeRect(n);
+            const cx = x + w / 2;
+            const cy = y + ht / 2;
+            return cx >= gx && cx <= gx + gw && cy >= gy && cy <= gy + gh;
+        }).map((n) => n.id);
+    }
+
+    /** Frames the selected nodes in a new group. */
+    groupSelection(): void {
+        const ids = selection.get();
+        const nodes = doc.nodes.filter((n) => ids.has(n.id));
+        if (!nodes.length) return;
+        let minX = Infinity, minY = Infinity, maxX = -Infinity, maxY = -Infinity;
+        for (const n of nodes) {
+            const [x, y, w, ht] = this.nodeRect(n);
+            minX = Math.min(minX, x); minY = Math.min(minY, y);
+            maxX = Math.max(maxX, x + w); maxY = Math.max(maxY, y + ht);
+        }
+        const pad = 24;
+        const head = 34;
+        const color = GROUP_COLORS[(doc.groups?.length ?? 0) % GROUP_COLORS.length];
+        edit('group', (d) => {
+            d.groups = [...(d.groups ?? []), {
+                id: graphId('g'), title: 'group', color,
+                rect: [Math.round(minX - pad), Math.round(minY - pad - head), Math.round(maxX - minX + pad * 2), Math.round(maxY - minY + pad * 2 + head)],
+            }];
+        });
+    }
+
+    ungroup(id: string): void {
+        edit('ungroup', (d) => {
+            d.groups = (d.groups ?? []).filter((g) => g.id !== id);
+        });
+    }
+
+    private startGroupDrag(e: PointerEvent, id: string): void {
+        if ((e.target as HTMLElement).closest('button, input')) return;
+        e.stopPropagation();
+        const g = this.groupById(doc, id);
+        if (!g) return;
+        const members = this.groupMembers(g);
+        // a press on the header selects what's inside
+        selection.set(new Set(e.shiftKey ? [...selection.get(), ...members] : members));
+        this.drag = { kind: 'group', id, last: { x: e.clientX, y: e.clientY }, members, moved: false };
+        this.el.setPointerCapture(e.pointerId);
+    }
+
+    /* ── selection bar, clipboard ──────────────────────────────── */
+
+    private showSelbar(): void {
+        const n = [...selection.get()].filter((id) => getNode(doc, id)).length;
+        this.selbar.hidden = n < 2;
+        if (n < 2) return;
+        const label = `${n} nodes`;
+        if (this.selbar.dataset.label === label) return;
+        this.selbar.dataset.label = label;
+        this.selbar.replaceChildren(
+            h('span', { className: 'graph-selbar-count' }, label),
+            h('button', { className: 'btn', title: 'frame them in a group (⌘/ctrl+g)', onclick: () => this.groupSelection() }, 'group'),
+            h('button', { className: 'btn', title: 'duplicate (⌘/ctrl+d)', onclick: () => this.duplicateSelection() }, 'duplicate'),
+            h('button', { className: 'btn', title: 'copy (⌘/ctrl+c)', onclick: () => this.copySelection() }, 'copy'),
+            h('button', { className: 'btn', title: 'enable / disable (m)', onclick: () => this.toggleDisabled([...selection.get()]) }, 'disable'),
+            h('button', { className: 'btn', title: 'delete (del)', onclick: () => this.deleteNodes([...selection.get()]) }, 'delete'));
+    }
+
+    /** The selection as a clip (or null if nothing is selected). */
+    private selectionClip(): Clip | null {
+        const ids = new Set([...selection.get()].filter((id) => getNode(doc, id)));
+        return ids.size ? makeClip(doc, ids, (g) => this.groupMembers(g)) : null;
+    }
+
+    copySelection(): void {
+        const clip = this.selectionClip();
+        if (!clip) return;
+        this.clip = clip;
+        void navigator.clipboard?.writeText(JSON.stringify(clip)).catch(() => { /* kept in memory */ });
+        this.flash(`copied ${clip.nodes.length} node${clip.nodes.length === 1 ? '' : 's'}`, true);
+    }
+
+    paste(clip: Clip | null = this.clip): void {
+        if (!clip?.nodes.length) return;
+        let ids: string[] = [];
+        edit('paste', (d) => {
+            ids = pasteClip(d, clip, [Math.round(this.pointer[0]), Math.round(this.pointer[1])]);
+        });
+        selection.set(new Set(ids));
     }
 
     /** What a node view depends on besides positions and values. */
@@ -512,24 +724,22 @@ export class GraphCanvas {
     }
 
     duplicateSelection(): void {
-        const ids = [...selection.get()];
-        if (!ids.length) return;
-        const map = new Map<string, string>();
+        const clip = this.selectionClip();
+        if (!clip) return;
+        let minX = Infinity, minY = Infinity;
+        for (const n of clip.nodes) {
+            minX = Math.min(minX, n.pos[0]);
+            minY = Math.min(minY, n.pos[1]);
+        }
+        for (const g of clip.groups ?? []) {
+            minX = Math.min(minX, g.rect[0]);
+            minY = Math.min(minY, g.rect[1]);
+        }
+        let ids: string[] = [];
         edit('duplicate', (d) => {
-            for (const id of ids) {
-                const n = getNode(d, id)!;
-                const copy: GraphNode = { ...structuredClone(n), id: graphId(), pos: [n.pos[0] + 30, n.pos[1] + 30] };
-                map.set(id, copy.id);
-                d.nodes.push(copy);
-            }
-            // links between duplicated nodes come along
-            for (const l of [...d.links]) {
-                if (map.has(l.from.node) && map.has(l.to.node)) {
-                    d.links.push({ id: graphId('l'), from: { node: map.get(l.from.node)!, port: l.from.port }, to: { node: map.get(l.to.node)!, port: l.to.port } });
-                }
-            }
+            ids = pasteClip(d, clip, [minX + 40, minY + 40]);
         });
-        selection.set(new Set(map.values()));
+        selection.set(new Set(ids));
     }
 
     /**
@@ -666,6 +876,24 @@ export class GraphCanvas {
                 this.drag = { kind: 'pan', last: { x: (a.x + b.x) / 2, y: (a.y + b.y) / 2 } };
                 return;
             }
+            // shift / ⌘ / ctrl + drag on empty canvas: a selection box (shift adds to the selection)
+            if (onBackground && e.button === 0 && e.pointerType !== 'touch' && (e.shiftKey || e.metaKey || e.ctrlKey)) {
+                this.startBox(e.clientX, e.clientY, e.shiftKey);
+                el.setPointerCapture(e.pointerId);
+                return;
+            }
+            if (onBackground && e.pointerType === 'touch') {
+                // touch: hold still for a moment, then drag, for a selection box
+                clearTimeout(this.longPress);
+                const at = { x: e.clientX, y: e.clientY };
+                this.longPress = window.setTimeout(() => {
+                    const p = this.pointers.get(e.pointerId);
+                    if (this.drag?.kind !== 'pan' || this.pointers.size !== 1 || !p || Math.hypot(p.x - at.x, p.y - at.y) > 8) return;
+                    navigator.vibrate?.(10);
+                    el.classList.remove('panning');
+                    this.startBox(p.x, p.y, false);
+                }, 450);
+            }
             if (onBackground || e.button === 1) {
                 if (onBackground && e.button === 0 && !e.shiftKey) {
                     selection.set(new Set());
@@ -683,9 +911,36 @@ export class GraphCanvas {
 
         el.addEventListener('pointermove', (e) => {
             if (this.pointers.has(e.pointerId)) this.pointers.set(e.pointerId, { x: e.clientX, y: e.clientY });
+            this.pointer = this.toGraph(e.clientX, e.clientY);
             const d = this.drag;
             if (!d) return;
             switch (d.kind) {
+                case 'box':
+                    this.moveBox(e.clientX, e.clientY);
+                    break;
+                case 'group': {
+                    const dx = (e.clientX - d.last.x) / this.view.zoom;
+                    const dy = (e.clientY - d.last.y) / this.view.zoom;
+                    d.last = { x: e.clientX, y: e.clientY };
+                    if (!dx && !dy) break;
+                    d.moved = true;
+                    const members = new Set(d.members);
+                    edit('move', (doc) => {
+                        const g = this.groupById(doc, d.id);
+                        if (g) g.rect = [g.rect[0] + dx, g.rect[1] + dy, g.rect[2], g.rect[3]];
+                        for (const n of doc.nodes) if (members.has(n.id)) n.pos = [n.pos[0] + dx, n.pos[1] + dy];
+                    });
+                    break;
+                }
+                case 'group-resize': {
+                    const w = Math.max(160, d.rect[2] + (e.clientX - d.start.x) / this.view.zoom);
+                    const ht = Math.max(80, d.rect[3] + (e.clientY - d.start.y) / this.view.zoom);
+                    edit(`resize:${d.id}`, (doc) => {
+                        const g = this.groupById(doc, d.id);
+                        if (g) g.rect = [g.rect[0], g.rect[1], Math.round(w), Math.round(ht)];
+                    });
+                    break;
+                }
                 case 'pan': {
                     if (this.pointers.size >= 2) {
                         const [a, b] = [...this.pointers.values()];
@@ -737,8 +992,21 @@ export class GraphCanvas {
             if (!d) return;
             if (d.kind === 'wire') this.endWire(e.clientX, e.clientY);
             if (d.kind === 'pan' && this.pointers.size > 0) return; // one finger still down
+            clearTimeout(this.longPress);
             this.drag = null;
             el.classList.remove('panning');
+            if (d.kind === 'box') d.el.remove();
+            if (d.kind === 'group' && d.moved) {
+                const members = new Set(d.members);
+                edit('move', (doc) => {
+                    const g = this.groupById(doc, d.id);
+                    if (!g) return;
+                    const sx = Math.round(g.rect[0] / 8) * 8 - g.rect[0];
+                    const sy = Math.round(g.rect[1] / 8) * 8 - g.rect[1];
+                    g.rect = [g.rect[0] + sx, g.rect[1] + sy, g.rect[2], g.rect[3]];
+                    for (const n of doc.nodes) if (members.has(n.id)) n.pos = [n.pos[0] + sx, n.pos[1] + sy];
+                });
+            }
             if (d.kind === 'nodes' && d.moved) {
                 // snap to an 8-unit grid when the drag ends
                 const ids = selection.get();
@@ -749,6 +1017,36 @@ export class GraphCanvas {
         };
         el.addEventListener('pointerup', up);
         el.addEventListener('pointercancel', up);
+
+        // copy / cut / paste: the system clipboard events (no permission prompt; works across tabs)
+        const typing = () => {
+            const t = document.activeElement as HTMLElement | null;
+            return !!t && (/^(INPUT|TEXTAREA|SELECT)$/.test(t.tagName) || t.isContentEditable || !!t.closest('.cm-editor, .script-panel, .node-menu'));
+        };
+        document.addEventListener('copy', (e) => {
+            if (typing()) return;
+            const clip = this.selectionClip();
+            if (!clip) return;
+            this.clip = clip;
+            e.clipboardData?.setData('text/plain', JSON.stringify(clip));
+            e.preventDefault();
+        });
+        document.addEventListener('cut', (e) => {
+            if (typing()) return;
+            const clip = this.selectionClip();
+            if (!clip) return;
+            this.clip = clip;
+            e.clipboardData?.setData('text/plain', JSON.stringify(clip));
+            e.preventDefault();
+            this.deleteNodes(clip.nodes.map((n) => n.id));
+        });
+        document.addEventListener('paste', (e) => {
+            if (typing()) return;
+            const clip = parseClip(e.clipboardData?.getData('text/plain') ?? '') ?? this.clip;
+            if (!clip) return;
+            e.preventDefault();
+            this.paste(clip);
+        });
 
         el.addEventListener('wheel', (e) => {
             if ((e.target as HTMLElement).closest('.viewport-host, textarea, select')) return;
@@ -786,9 +1084,14 @@ export class GraphCanvas {
             } else if (mod && e.key.toLowerCase() === 'd') {
                 e.preventDefault();
                 this.duplicateSelection();
+            } else if (mod && e.key.toLowerCase() === 'g') {
+                e.preventDefault();
+                this.groupSelection();
             } else if (mod && e.key.toLowerCase() === 'a') {
                 e.preventDefault();
                 selection.set(new Set(doc.nodes.map((n) => n.id)));
+            } else if (e.key === 'Escape') {
+                selection.set(new Set());
             } else if (e.key === 'Delete' || e.key === 'Backspace') {
                 if (this.selectedLink) {
                     const id = this.selectedLink;
@@ -811,8 +1114,36 @@ export class GraphCanvas {
         });
     }
 
-    private flash(message: string): void {
-        const tip = h('div', { className: 'graph-flash' }, message);
+    private startBox(cx: number, cy: number, add: boolean): void {
+        const box = h('div', { className: 'graph-marquee' });
+        this.el.append(box);
+        this.drag = { kind: 'box', start: { x: cx, y: cy }, base: add ? new Set(selection.get()) : new Set(), el: box };
+        this.moveBox(cx, cy);
+    }
+
+    /** Updates the selection box and selects every node it touches. */
+    private moveBox(cx: number, cy: number): void {
+        if (this.drag?.kind !== 'box') return;
+        const { start, base, el } = this.drag;
+        const r = this.el.getBoundingClientRect();
+        const left = Math.min(start.x, cx), top = Math.min(start.y, cy);
+        Object.assign(el.style, {
+            left: `${left - r.left}px`, top: `${top - r.top}px`,
+            width: `${Math.abs(cx - start.x)}px`, height: `${Math.abs(cy - start.y)}px`,
+        });
+        const [x0, y0] = this.toGraph(left, top);
+        const [x1, y1] = this.toGraph(Math.max(start.x, cx), Math.max(start.y, cy));
+        const picked = new Set(base);
+        for (const n of doc.nodes) {
+            const [x, y, w, ht] = this.nodeRect(n);
+            if (x < x1 && x + w > x0 && y < y1 && y + ht > y0) picked.add(n.id);
+        }
+        const cur = selection.get();
+        if (picked.size !== cur.size || [...picked].some((id) => !cur.has(id))) selection.set(picked);
+    }
+
+    private flash(message: string, ok = false): void {
+        const tip = h('div', { className: ok ? 'graph-flash ok' : 'graph-flash' }, message);
         this.el.append(tip);
         setTimeout(() => tip.remove(), 1600);
     }
