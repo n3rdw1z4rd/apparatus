@@ -120,6 +120,12 @@ export function replace(next: GraphDoc, resetHistory = true): void {
     changed();
 }
 
+/** Node positions were tidied (not an edit of yours): redraw and save, no undo step. */
+export function adjustLayout(): void {
+    bump(docRevision);
+    scheduleSave();
+}
+
 function changed(): void {
     bump(docRevision);
     scheduleEvaluate();
@@ -249,6 +255,40 @@ export async function saveScript(type: string, source: string): Promise<'compile
     });
     bump(typesRevision);
     return 'compiled';
+}
+
+/** Whether a type is one of this graph's script node types (vs a built-in). */
+export function isScriptType(type: string): boolean {
+    return !!doc.scripts?.[type];
+}
+
+/** A free type name based on `base` (`custom/box`, `custom/box-2`, …). */
+export function freeTypeName(base: string): string {
+    let name = base;
+    for (let k = 2; registry.get(name) || doc.scripts?.[name]; k++) name = `${base}-${k}`;
+    return name;
+}
+
+/**
+ * Saves `source` as a new script node type and switches the given nodes to it, keeping their
+ * values and the wires whose ports still exist — one undo step. Throws on a compile error.
+ */
+export async function forkNodes(nodeIds: string[], type: string, source: string): Promise<void> {
+    if (scriptsSuspended.get()) throw new Error('script nodes are paused — resume them first');
+    if (registry.get(type) && !isScriptType(type)) throw new Error(`${type} is a built-in type — pick another name`);
+    const spec = await worker.compile(type, source);
+    workerScripts.set(type, source);
+    registerInterface(spec);
+    const def = registry.get(type)!;
+    const ins = new Set(def.inputs.map((p) => p.name));
+    const outs = new Set(def.outputs.map((p) => p.name));
+    const ids = new Set(nodeIds);
+    edit(`fork:${type}`, (d) => {
+        d.scripts = { ...(d.scripts ?? {}), [type]: source };
+        for (const n of d.nodes) if (ids.has(n.id)) n.type = type;
+        d.links = d.links.filter((l) => !(ids.has(l.to.node) && !ins.has(l.to.port)) && !(ids.has(l.from.node) && !outs.has(l.from.port)));
+    });
+    bump(typesRevision);
 }
 
 /* ── autosave ────────────────────────────────────────────────────── */

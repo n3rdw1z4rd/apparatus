@@ -16,6 +16,15 @@ import { DEFAULT_EXAMPLE, EXAMPLES } from './editor/examples';
 
 const canvas = new GraphCanvas();
 
+/** After a graph loads: once nodes have their real sizes, pull overlapping ones apart, then frame them. */
+function settle(): void {
+    requestAnimationFrame(() => requestAnimationFrame(async () => {
+        await document.fonts?.ready;
+        canvas.unstack();
+        requestAnimationFrame(() => canvas.fit());
+    }));
+}
+
 setScriptAddHandler((type) => {
     const def = registry.get(type);
     if (!def) return;
@@ -49,7 +58,7 @@ const ExamplesMenu = () => {
     select.addEventListener('change', () => {
         loadExample(select.value);
         select.value = '';
-        requestAnimationFrame(() => canvas.fit());
+        settle();
     });
     return select;
 };
@@ -70,7 +79,7 @@ const Toolbar = () => (
         <button className="btn" title="load a graph from JSON" onClick={pickImport}>import</button>
         <button className="btn" title={`start over from the ${DEFAULT_EXAMPLE.label.toLowerCase()} scene (undo to go back)`} onClick={() => {
             loadExample(DEFAULT_EXAMPLE.id);
-            requestAnimationFrame(() => canvas.fit());
+            settle();
         }}>reset</button>
         <span className="graph-status">{status}</span>
         <ExamplesMenu />
@@ -99,12 +108,12 @@ document.getElementById('root')!.append(
         <TrustBanner />
         <SuspendedBanner />
         {canvas.el}
-        <div className="graph-help"><span className="legend ok">ok</span> <span className="legend error">error</span> <span className="legend slow">slow</span> <span className="legend skipped">skipped</span> · drag empty space to pan · wheel / pinch to zoom · drag from a pin to wire · double-click, right-click or <b>a</b> to add · <b>m</b> disables · <b>del</b> deletes · <b>f</b> fits</div>
+        <div className="graph-help"><span className="legend ok">ok</span> <span className="legend error">error</span> <span className="legend slow">slow</span> <span className="legend skipped">skipped</span> · drag empty space to pan · wheel or pinch to zoom · drag from a pin to wire · double-click or right-click to add a node</div>
     </div> as HTMLElement,
 );
 
 boot();
-requestAnimationFrame(() => canvas.fit());
+settle();
 
 // console access: `graph.doc`, `graph.registry`, `graph.canvas`
 (window as any).graph = { get doc() { return doc; }, registry, canvas, selection };

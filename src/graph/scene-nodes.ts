@@ -1,5 +1,6 @@
 import { portTypes, type NodeRegistry, type NodeSpec } from '@n3rdw1z4rd/core/graph';
 import { PALETTE, PART_DEFAULTS } from '../core/scene';
+import { SCENE_SOURCES } from './scene-sources';
 
 /* ------------------------------------------------------------------ */
 /* 2D scene nodes: the graph evaluates to a SceneData object that the  */
@@ -172,5 +173,6 @@ function entity(id: string, shape: 'box' | 'ball', at: Vec2, angle: number, size
 }
 
 export function registerSceneNodes(registry: NodeRegistry): void {
-    for (const spec of SCENE_NODES) registry.register(spec);
+    // each carries its source (a script module) so the editor can show and fork it
+    for (const spec of SCENE_NODES) registry.register({ ...spec, source: spec.source ?? SCENE_SOURCES[spec.type] });
 }

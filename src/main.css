@@ -114,7 +114,7 @@ body,
     background: rgba(20, 20, 20, 0.88);
     color: var(--smoke-fg);
     font-family: var(--smoke-font-mono);
-    font-size: var(--smoke-font-size-md);
+    font-size: 18px;
     border: 0 solid var(--smoke-border);
     transition: transform var(--slide), visibility var(--slide);
 }

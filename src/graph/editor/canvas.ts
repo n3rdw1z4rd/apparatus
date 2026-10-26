@@ -8,8 +8,8 @@ import { h, svg } from './dom';
 import { openNodeMenu } from './menu';
 import { openScriptPanel } from './script-panel';
 import {
-    doc, docEpoch, docRevision, edit, evaluateFrame, isAnimated, redo, registry, results, scriptsSuspended, scriptsTrusted,
-    selection, typesRevision, undo,
+    adjustLayout, doc, docEpoch, docRevision, edit, evaluateFrame, isAnimated, isScriptType, redo, registry, results, scriptsSuspended,
+    scriptsTrusted, selection, typesRevision, undo,
 } from './state';
 import { hasWidget, preview, widget } from './widgets';
 
@@ -73,6 +73,8 @@ export class GraphCanvas {
     private readonly pointers = new Map<number, { x: number; y: number }>();
     private pinchDist = 0;
     private wiresQueued = false;
+    /** nodes change size as fonts load and widgets settle: their pins move, so the wires follow */
+    private readonly nodeSizes = new ResizeObserver(() => this.drawWires());
 
     constructor() {
         this.wires = svg('svg', { class: 'graph-wires' });
@@ -87,6 +89,7 @@ export class GraphCanvas {
         scriptsSuspended.subscribe(() => this.showResults());
         selection.subscribe(() => this.markSelection());
         new ResizeObserver(() => this.drawWires()).observe(this.el);
+        void document.fonts?.ready.then(() => this.drawWires());
         this.applyView();
     }
 
@@ -130,8 +133,16 @@ export class GraphCanvas {
         }
         const r = this.el.getBoundingClientRect();
         const pad = 60;
-        const z = Math.min(1.2, Math.max(0.15, Math.min((r.width - pad * 2) / (maxX - minX), (r.height - pad * 2) / (maxY - minY))));
-        this.view = { zoom: z, x: (r.width - (maxX - minX) * z) / 2 - minX * z, y: (r.height - (maxY - minY) * z) / 2 - minY * z };
+        // don't zoom out so far that nodes become unreadable. A graph too wide to fit keeps its
+        // right side in view — that's where the output (the viewport) is
+        const z = Math.min(1.2, Math.max(0.75, Math.min((r.width - pad * 2) / (maxX - minX), (r.height - pad * 2) / (maxY - minY))));
+        const fitsX = (maxX - minX) * z <= r.width - pad * 2;
+        const fitsY = (maxY - minY) * z <= r.height - pad * 2;
+        this.view = {
+            zoom: z,
+            x: fitsX ? (r.width - (maxX - minX) * z) / 2 - minX * z : r.width - pad / 2 - maxX * z,
+            y: fitsY ? (r.height - (maxY - minY) * z) / 2 - minY * z : pad - minY * z,
+        };
         this.applyView();
     }
 
@@ -141,6 +152,7 @@ export class GraphCanvas {
         const alive = new Set(doc.nodes.map((n) => n.id));
         for (const [id, v] of this.views) {
             if (alive.has(id)) continue;
+            this.nodeSizes.unobserve(v.el);
             v.el.remove();
             this.views.delete(id);
             const vp = this.viewports.get(id);
@@ -156,8 +168,13 @@ export class GraphCanvas {
             let v = this.views.get(node.id);
             if (!v || force || v.key !== key) {
                 const next = this.buildNode(node, def, key);
-                if (v) v.el.replaceWith(next.el);
-                else this.layer.append(next.el);
+                if (v) {
+                    this.nodeSizes.unobserve(v.el);
+                    v.el.replaceWith(next.el);
+                } else {
+                    this.layer.append(next.el);
+                }
+                this.nodeSizes.observe(next.el);
                 v = next;
                 this.views.set(node.id, v);
             }
@@ -187,7 +204,13 @@ export class GraphCanvas {
         const head = h('header', { className: 'gnode-head', style: { '--cat': color } as any },
             h('span', { className: 'gnode-title', title: def ? `${def.type}${def.description ? ` — ${def.description}` : ''}` : node.type },
                 node.title ?? def?.title ?? node.type),
-            def?.source ? h('button', { className: 'gnode-btn', title: 'edit this node’s script', onclick: () => openScriptPanel(def.type) }, '✎') : null,
+            def?.source && def.type !== 'output/viewport'
+                ? h('button', {
+                    className: 'gnode-btn',
+                    title: isScriptType(def.type) ? 'edit this node’s script' : 'view this node’s code — save it as a custom version',
+                    onclick: () => void openScriptPanel({ type: def.type, nodeId: node.id }),
+                }, '✎')
+                : null,
             def && !def.output ? h('button', {
                 className: animated ? 'gnode-btn on' : 'gnode-btn',
                 title: animated ? 'animated: re-runs every frame while playing (click to stop)' : 'animate: re-run every frame while playing',
@@ -276,7 +299,7 @@ export class GraphCanvas {
             const node = getNode(doc, id);
             const def = node && registry.get(node.type);
             const animated = !!(node && (node.animate ?? def?.animate));
-            const paused = !!def?.source && pausedScripts;
+            const paused = !!def && isScriptType(def.type) && pausedScripts;
 
             // state → border color; skipping propagates (blocked = an upstream node failed or was skipped)
             let state: NodeState;
@@ -507,6 +530,45 @@ export class GraphCanvas {
             }
         });
         selection.set(new Set(map.values()));
+    }
+
+    /**
+     * Tidies a hand-laid-out graph (the examples) once nodes have their real sizes: nodes at
+     * about the same x form a column; columns are spaced by their widest node, and each
+     * column is stacked top-down with a gap, so nothing overlaps whatever the font size.
+     * Not an undo step: it's part of what was just loaded.
+     */
+    unstack(gap = 28): void {
+        const boxes = doc.nodes.map((n) => {
+            const el = this.views.get(n.id)?.el;
+            return { n, w: el?.offsetWidth ?? 200, h: el?.offsetHeight ?? 100 };
+        }).sort((a, b) => a.n.pos[0] - b.n.pos[0]);
+
+        const columns: (typeof boxes)[] = [];
+        for (const b of boxes) {
+            const col = columns[columns.length - 1];
+            if (col && b.n.pos[0] - col[0].n.pos[0] < 60) col.push(b);
+            else columns.push([b]);
+        }
+
+        let moved = false;
+        let right = -Infinity;
+        for (const col of columns) {
+            const x = Math.max(col[0].n.pos[0], right + gap * 2);
+            const width = Math.max(...col.map((b) => b.w));
+            col.sort((a, b) => a.n.pos[1] - b.n.pos[1]);
+            let bottom = -Infinity;
+            for (const b of col) {
+                const y = Math.max(b.n.pos[1], bottom + gap);
+                if (b.n.pos[0] !== x || b.n.pos[1] !== y) {
+                    b.n.pos = [x, y];
+                    moved = true;
+                }
+                bottom = y + b.h;
+            }
+            right = x + width;
+        }
+        if (moved) adjustLayout();
     }
 
     /** Opens the add-node menu at a client point. */

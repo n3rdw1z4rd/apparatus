@@ -62,7 +62,7 @@ html, body, #root {
 .graph-brand { color: var(--fg); font-weight: 600; text-decoration: none; }
 .graph-brand.muted { color: var(--muted); font-weight: 400; margin-right: 8px; }
 .graph-examples { padding-right: 6px; appearance: auto; }
-.graph-status { margin-left: auto; color: var(--muted); overflow: hidden; text-overflow: ellipsis; white-space: nowrap; max-width: 50%; }
+.graph-status { flex: 1 1 0; min-width: 0; text-align: right; margin-left: auto; color: var(--muted); overflow: hidden; text-overflow: ellipsis; white-space: nowrap; max-width: 50%; }
 
 .btn {
     min-height: var(--hit);
@@ -89,12 +89,14 @@ html, body, #root {
 }
 
 .graph-help {
-    position: absolute;
-    left: 10px;
-    bottom: calc(8px + env(safe-area-inset-bottom, 0px));
-    color: #5a5a5a;
-    pointer-events: none;
-    font-size: 11px;
+    padding: 5px 10px calc(5px + env(safe-area-inset-bottom, 0px));
+    border-top: 1px solid var(--border);
+    background: var(--panel);
+    color: #6a6a6a;
+    font-size: 12px;
+    white-space: nowrap;
+    overflow: hidden;
+    text-overflow: ellipsis;
 }
 
 @media (max-width: 720px) {
@@ -170,6 +172,7 @@ html, body, #root {
     border: 2px solid var(--state-skipped);
     border-radius: 6px;
     background: var(--node);
+    font-size: 13px;
     box-shadow: 0 4px 14px rgba(0, 0, 0, 0.45);
     user-select: none;
 }
@@ -225,8 +228,8 @@ html, body, #root {
     display: flex;
     align-items: center;
     gap: 6px;
-    min-height: 22px;
-    padding: 0 12px;
+    min-height: 24px;
+    padding: 0 14px;
 }
 .gnode-row.out { justify-content: flex-end; }
 .gnode-row.muted { color: var(--muted); }
@@ -236,20 +239,26 @@ html, body, #root {
 
 .gnode-pin {
     position: absolute;
-    width: 12px;
-    height: 12px;
-    border: 2px solid var(--pin);
+    top: 50%;
+    z-index: 2; /* above the node's border and its neighbours */
+    width: 14px;
+    height: 14px;
+    margin-top: -7px;
+    border: 2.5px solid var(--pin, #9a9a9a);
     border-radius: 50%;
     background: var(--node);
+    /* a dark gap and a light ring, so a pin reads against any wire or node color */
+    box-shadow: 0 0 0 2px #0c0c0c, 0 0 0 3px rgba(255, 255, 255, 0.28);
     cursor: crosshair;
     touch-action: none;
 }
+.gnode-pin:hover { box-shadow: 0 0 0 2px #0c0c0c, 0 0 0 3.5px rgba(255, 255, 255, 0.7); }
 /* a bigger invisible hit area for fingers */
 .gnode-pin::after { content: ''; position: absolute; inset: -9px; border-radius: 50%; }
-.gnode-pin.in { left: -7px; }
-.gnode-pin.out { right: -7px; background: var(--pin); }
+.gnode-pin.in { left: -9px; }
+.gnode-pin.out { right: -9px; background: var(--pin, #9a9a9a); }
 .gnode-pin.list { border-radius: 3px; }
-.gnode-pin.multi { width: 10px; height: 16px; }
+.gnode-pin.multi { width: 12px; height: 18px; margin-top: -9px; }
 .wiring .gnode-pin.in:not(.can) { opacity: 0.25; }
 .wiring .gnode-pin.in.can { box-shadow: 0 0 0 3px color-mix(in srgb, var(--pin) 45%, transparent); }
 
@@ -257,7 +266,7 @@ html, body, #root {
     min-height: 0;
     padding: 0 10px 6px;
     color: var(--muted);
-    font-size: 10.5px;
+    font-size: 11.5px;
     overflow: hidden;
     text-overflow: ellipsis;
     white-space: nowrap;
@@ -280,7 +289,7 @@ html, body, #root {
 /* ── widgets ───────────────────────────────────────────────────── */
 
 .gw-num, .gw-text, .gw-select {
-    height: 22px;
+    height: 24px;
     min-width: 0;
     padding: 0 6px;
     border: 1px solid #333;
@@ -403,6 +412,9 @@ textarea.gw-text { height: auto; width: 100%; padding: 4px 6px; resize: vertical
 .sp-bar .gw-text { flex: 1; width: auto; height: var(--hit); }
 .sp-picker { flex: 1; height: var(--hit); }
 .sp-editor { flex: 1; min-height: 0; overflow: hidden; border: 1px solid var(--border); border-radius: 4px; }
+.sp-heading { color: #a8a8a8; line-height: 1.5; }
+.sp-heading b { color: var(--fg); }
+.sp-check { display: inline-flex; align-items: center; gap: 4px; color: #a8a8a8; white-space: nowrap; }
 .sp-status { color: var(--muted); white-space: pre-wrap; }
 .sp-status.ok { color: var(--accent); }
 .sp-status.err { color: var(--err); }
