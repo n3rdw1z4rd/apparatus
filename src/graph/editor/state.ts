@@ -1,7 +1,9 @@
 import { Signal } from '@n3rdw1z4rd/smoke-ui';
 import {
-    GraphEvaluator, compileNodeScript, createNodeRegistry, normalizeGraph, type FrameInfo, type GraphDoc, type NodeResult,
+    GraphEvaluator, createNodeRegistry, normalizeGraph, type FrameInfo, type GraphDoc, type NodeResult,
 } from '@n3rdw1z4rd/core/graph';
+import { EVAL_HANG_MS, GraphWorker } from '../eval-client';
+import type { NodeInterface } from '../eval-protocol';
 import { registerSceneNodes } from '../scene-nodes';
 import { exampleGraph } from './example';
 
@@ -11,10 +13,15 @@ import { exampleGraph } from './example';
 /* schedules evaluation); `docRevision` tells the views it changed.     */
 /* ------------------------------------------------------------------ */
 
+/*
+ * The editor's registry mirrors the worker's: built-ins are the same code; script node types
+ * are interfaces only (pins and widgets) — their code runs in the worker.
+ */
 export const registry = createNodeRegistry();
 registerSceneNodes(registry);
 
-export const evaluator = new GraphEvaluator(registry);
+/** used here only for `animated()` (which reads interfaces); evaluation happens in the worker */
+const interfaces = new GraphEvaluator(registry);
 
 export let doc: GraphDoc = exampleGraph(registry);
 
@@ -30,6 +37,8 @@ export const selection = new Signal<Set<string>>(new Set());
 export const status = new Signal('');
 /** scripts in a loaded graph wait for this before they compile */
 export const scriptsTrusted = new Signal(true);
+/** set when the worker was replaced because it stopped responding: scripts wait for `resumeScripts()` */
+export const scriptsSuspended = new Signal(false);
 
 const bump = (s: Signal<number>) => s.set(s.get() + 1);
 
@@ -40,13 +49,16 @@ const redoStack: string[] = [];
 let lastLabel = '';
 let lastAt = 0;
 
+/** Continuous edits (a drag, scrubbing a field, a resize) merge into one undo step. */
+const MERGING = /^(move|value:|resize:)/;
+
 /**
- * Changes the document. Consecutive edits with the same `label` within a second merge into
- * one undo step (dragging a node, typing in a field).
+ * Changes the document. Consecutive continuous edits with the same `label` within a second
+ * merge into one undo step; every other edit (connect, delete, toggle…) is its own step.
  */
 export function edit(label: string, change: (doc: GraphDoc) => void): void {
     const now = performance.now();
-    if (label !== lastLabel || now - lastAt > 1000) {
+    if (!MERGING.test(label) || label !== lastLabel || now - lastAt > 1000) {
         undoStack.push(JSON.stringify(doc));
         if (undoStack.length > 200) undoStack.shift();
         redoStack.length = 0;
@@ -92,10 +104,15 @@ function changed(): void {
     scheduleSave();
 }
 
-/* ── evaluation ──────────────────────────────────────────────────── */
+/* ── evaluation (in a worker) ────────────────────────────────────── */
+
+let worker = new GraphWorker();
+/** script sources the current worker has compiled */
+let workerScripts = new Map<string, string>();
 
 let queued = false;
 let running = false;
+let again = false;
 let frame: FrameInfo | undefined;
 
 /** Evaluates on the next microtask (edits in the same tick coalesce). */
@@ -108,7 +125,10 @@ export function scheduleEvaluate(): void {
     });
 }
 
-/** Evaluates for an animation frame (the viewport calls this while playing). */
+/**
+ * Evaluates for an animation frame (the viewport calls this while playing). Frames that
+ * arrive while the worker is busy are folded into the next evaluation, not queued.
+ */
 export function evaluateFrame(f: FrameInfo): Promise<void> {
     frame = f;
     return evaluate();
@@ -116,50 +136,97 @@ export function evaluateFrame(f: FrameInfo): Promise<void> {
 
 /** Whether any output depends on an animated node. */
 export function isAnimated(): boolean {
-    return evaluator.animated(doc).length > 0;
+    return interfaces.animated(doc).length > 0;
 }
 
 async function evaluate(): Promise<void> {
     if (running) {
-        scheduleEvaluate();
+        again = true; // run once more when the current one is back
         return;
     }
     running = true;
     try {
-        const r = await evaluator.evaluate(doc, { frame });
-        results.set(r.results);
+        await worker.ready;
+        const reply = await worker.evaluate(doc, docRevision.get(), frame);
+        const keep = new Set(reply.order);
+        const next = new Map<string, NodeResult>();
+        for (const [id, r] of results.get()) if (keep.has(id)) next.set(id, r);
+        for (const [id, r] of reply.results) next.set(id, r);
+        results.set(next);
     } catch (err) {
-        status.set(`evaluation failed: ${(err as Error).message}`);
+        // a request cut off by a restart: the watchdog already said what happened
+        if ((err as Error).message !== 'restarted') status.set(`evaluation failed: ${(err as Error).message}`);
     } finally {
         running = false;
+        if (again) {
+            again = false;
+            scheduleEvaluate();
+        }
     }
+}
+
+/* ── watchdog ────────────────────────────────────────────────────── */
+
+setInterval(() => {
+    if (!worker.hung) return;
+    worker.dispose('restarted');
+    worker = new GraphWorker();
+    workerScripts = new Map();
+    scriptsSuspended.set(true);
+    status.set(`the graph stopped responding for ${EVAL_HANG_MS / 1000}s (a script node stuck in a loop?) — restarted with script nodes paused`);
+    scheduleEvaluate();
+}, 500);
+
+/** Lets script nodes run again after a restart. */
+export function resumeScripts(): void {
+    scriptsSuspended.set(false);
+    status.set('');
+    void compileScripts();
 }
 
 /* ── script node types ───────────────────────────────────────────── */
 
-/** Compiles the document's script node types into the registry. */
+/** Registers a script type's interface in the editor's registry (its code lives in the worker). */
+function registerInterface(spec: NodeInterface): void {
+    registry.register({ ...spec, run: () => { throw new Error('script nodes run in the graph worker'); } });
+}
+
+/** Compiles the document's script node types in the worker (once trusted and not suspended). */
 export async function compileScripts(): Promise<void> {
-    if (!scriptsTrusted.get()) return;
+    if (!scriptsTrusted.get() || scriptsSuspended.get()) return;
+    const w = worker;
     for (const [type, source] of Object.entries(doc.scripts ?? {})) {
-        if (registry.get(type)?.source === source) continue;
+        if (workerScripts.get(type) === source && registry.get(type)?.source === source) continue;
         try {
-            registry.register(await compileNodeScript(type, source));
+            registerInterface(await w.compile(type, source));
+            workerScripts.set(type, source);
         } catch (err) {
-            status.set(`script node ${type}: ${(err as Error).message}`);
+            if (w === worker) status.set(`script node ${type}: ${(err as Error).message}`);
         }
     }
     bump(typesRevision);
     scheduleEvaluate();
 }
 
-/** Saves (and compiles) a script node type; throws on a compile error, leaving the old one. */
-export async function saveScript(type: string, source: string): Promise<void> {
-    const def = await compileNodeScript(type, source);
-    registry.register(def);
+/**
+ * Saves (and compiles) a script node type; throws on a compile error, leaving the old one.
+ * While scripts are paused it only saves the source ('saved'); resuming compiles it.
+ */
+export async function saveScript(type: string, source: string): Promise<'compiled' | 'saved'> {
+    if (scriptsSuspended.get()) {
+        edit(`script:${type}`, (d) => {
+            d.scripts = { ...(d.scripts ?? {}), [type]: source };
+        });
+        return 'saved';
+    }
+    const spec = await worker.compile(type, source);
+    workerScripts.set(type, source);
+    registerInterface(spec);
     edit(`script:${type}`, (d) => {
         d.scripts = { ...(d.scripts ?? {}), [type]: source };
     });
     bump(typesRevision);
+    return 'compiled';
 }
 
 /* ── autosave ────────────────────────────────────────────────────── */

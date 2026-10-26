@@ -3,7 +3,8 @@ import { addNode } from '@n3rdw1z4rd/core/graph';
 import { GraphCanvas } from './editor/canvas';
 import { openScriptPanel, setScriptAddHandler } from './editor/script-panel';
 import {
-    boot, doc, edit, exportGraph, importGraph, redo, registry, replace, scriptsTrusted, selection, status, trustScripts, undo,
+    boot, doc, edit, exportGraph, importGraph, redo, registry, replace, resumeScripts, scriptsSuspended, scriptsTrusted,
+    selection, status, trustScripts, undo,
 } from './editor/state';
 import { exampleGraph } from './editor/example';
 
@@ -66,12 +67,21 @@ const TrustBanner = () => (
     </div>
 ) as HTMLElement;
 
+const SuspendedBanner = () => (
+    <div className="graph-banner" style={{ display: computed(() => (scriptsSuspended.get() ? '' : 'none')) }}>
+        <span>The graph stopped responding and was restarted. <b>Script nodes are paused</b> — fix the stuck one, then resume.</span>
+        <button className="btn" onClick={() => void openScriptPanel()}>scripts</button>
+        <button className="btn primary" onClick={resumeScripts}>resume</button>
+    </div>
+) as HTMLElement;
+
 document.getElementById('root')!.append(
     <div className="graph-app">
         <Toolbar />
         <TrustBanner />
+        <SuspendedBanner />
         {canvas.el}
-        <div className="graph-help">drag empty space to pan · wheel / pinch to zoom · drag from a pin to wire · double-click, right-click or <b>a</b> to add · <b>del</b> deletes · <b>f</b> fits</div>
+        <div className="graph-help"><span className="legend ok">ok</span> <span className="legend error">error</span> <span className="legend slow">slow</span> <span className="legend skipped">skipped</span> · drag empty space to pan · wheel / pinch to zoom · drag from a pin to wire · double-click, right-click or <b>a</b> to add · <b>m</b> disables · <b>del</b> deletes · <b>f</b> fits</div>
     </div> as HTMLElement,
 );
 

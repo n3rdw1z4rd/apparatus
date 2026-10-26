@@ -1,6 +1,6 @@
 import { SCRIPT_NODE_TEMPLATE } from '@n3rdw1z4rd/core/graph';
 import { h } from './dom';
-import { doc, registry, saveScript, scriptsTrusted, trustScripts } from './state';
+import { doc, registry, resumeScripts, saveScript, scriptsSuspended, scriptsTrusted, trustScripts } from './state';
 
 /* ------------------------------------------------------------------ */
 /* Script nodes: write a node type by hand (an ES module exporting      */
@@ -48,9 +48,9 @@ export async function openScriptPanel(type?: string): Promise<void> {
     const save = async () => {
         if (!view || !current) return;
         try {
-            await saveScript(current, view.state.doc.toString());
+            const how = await saveScript(current, view.state.doc.toString());
             status.className = 'sp-status ok';
-            status.textContent = `saved · ${current} compiled`;
+            status.textContent = how === 'compiled' ? `saved · ${current} compiled` : `saved · ${current} (script nodes are paused: resume to run it)`;
             refreshPicker();
         } catch (err) {
             status.className = 'sp-status err';
@@ -92,6 +92,10 @@ export async function openScriptPanel(type?: string): Promise<void> {
             h('button', { className: 'btn', title: 'add a node of this type to the graph', onclick: () => current && onAdd(current) }, '+ to graph'),
             h('button', { className: 'btn', title: 'close (esc)', onclick: closeScriptPanel }, '✕')),
         h('div', { className: 'sp-bar' }, nameInput, h('button', { className: 'btn', onclick: create }, 'new type')),
+        scriptsSuspended.get()
+            ? h('div', { className: 'sp-status err' }, 'Script nodes are paused after the graph stopped responding. Fix the stuck script and save, then ',
+                h('button', { className: 'btn', onclick: () => { resumeScripts(); closeScriptPanel(); } }, 'resume'))
+            : null,
         !scriptsTrusted.get()
             ? h('div', { className: 'sp-status err' }, 'This graph came from a file: its scripts are not running. ',
                 h('button', { className: 'btn', onclick: () => { trustScripts(); closeScriptPanel(); } }, 'trust and run them'))

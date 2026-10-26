@@ -8,7 +8,8 @@ import { h, svg } from './dom';
 import { openNodeMenu } from './menu';
 import { openScriptPanel } from './script-panel';
 import {
-    doc, docEpoch, docRevision, edit, evaluateFrame, isAnimated, redo, registry, results, selection, typesRevision, undo,
+    doc, docEpoch, docRevision, edit, evaluateFrame, isAnimated, redo, registry, results, scriptsSuspended, scriptsTrusted,
+    selection, typesRevision, undo,
 } from './state';
 import { hasWidget, preview, widget } from './widgets';
 
@@ -18,6 +19,23 @@ import { hasWidget, preview, widget } from './widgets';
 /* their shape changes (links, type, flags); positions and results are  */
 /* patched in place.                                                    */
 /* ------------------------------------------------------------------ */
+
+/**
+ * A run this long (ms) marks a node as a likely bottleneck — half a 60 fps frame. Animated
+ * nodes run every frame while playing, so they get a tighter budget.
+ */
+export const SLOW_MS = 8;
+export const SLOW_ANIMATED_MS = 4;
+
+/** A node's state, shown by its border color. */
+export type NodeState = 'ok' | 'error' | 'slow' | 'skipped';
+
+const STATE_TEXT: Record<NodeState, string> = {
+    ok: 'ran fine',
+    error: 'error',
+    slow: 'slow — a likely bottleneck',
+    skipped: 'skipped',
+};
 
 const CATEGORY_COLORS: Record<string, string> = {
     value: '#3fd1a4', math: '#4ea8de', vec2: '#4ea8de', list: '#9b6dde', shape: '#f2a541',
@@ -66,6 +84,7 @@ export class GraphCanvas {
         docEpoch.subscribe(() => this.render(true));
         typesRevision.subscribe(() => this.render(true));
         results.subscribe(() => this.showResults());
+        scriptsSuspended.subscribe(() => this.showResults());
         selection.subscribe(() => this.markSelection());
         new ResizeObserver(() => this.drawWires()).observe(this.el);
         this.applyView();
@@ -157,7 +176,7 @@ export class GraphCanvas {
     /** What a node view depends on besides positions and values. */
     private shapeKey(node: GraphNode, def: NodeDef | undefined): string {
         const linked = doc.links.filter((l) => l.to.node === node.id).map((l) => l.to.port).sort().join(',');
-        return [def?.type ?? '?', def?.revision ?? 0, linked, node.animate ?? '', node.title ?? '', node.collapsed ?? ''].join('|');
+        return [def?.type ?? '?', def?.revision ?? 0, linked, node.animate ?? '', node.disabled ?? '', node.title ?? '', node.collapsed ?? ''].join('|');
     }
 
     private buildNode(node: GraphNode, def: NodeDef | undefined, key: string): NodeView {
@@ -177,6 +196,11 @@ export class GraphCanvas {
                     n.animate = !animated;
                 }),
             }, '⟳') : null,
+            h('button', {
+                className: node.disabled ? 'gnode-btn power' : 'gnode-btn power on',
+                title: node.disabled ? 'disabled — click to enable (m)' : 'enabled — click to disable (m)',
+                onclick: () => this.toggleDisabled([node.id]),
+            }, '⏻'),
             h('button', { className: 'gnode-btn', title: 'delete (del)', onclick: () => this.deleteNodes([node.id]) }, '×'));
         head.addEventListener('pointerdown', (e) => this.startNodeDrag(e, node.id));
 
@@ -207,6 +231,7 @@ export class GraphCanvas {
 
         const foot = h('footer', { className: 'gnode-foot' });
         const el = h('div', { className: def?.output ? 'gnode output' : 'gnode', dataset: { node: node.id } }, head, body, foot);
+        if (node.disabled) el.dataset.disabled = '';
         if (def?.type === 'output/viewport') {
             const grip = h('div', { className: 'gnode-resize', title: 'resize' });
             grip.addEventListener('pointerdown', (e) => this.startResize(e, node));
@@ -245,31 +270,61 @@ export class GraphCanvas {
 
     private showResults(): void {
         const res = results.get();
+        const pausedScripts = scriptsSuspended.get() || !scriptsTrusted.get();
         for (const [id, v] of this.views) {
             const r = res.get(id);
             const node = getNode(doc, id);
             const def = node && registry.get(node.type);
-            v.el.classList.toggle('error', !!r?.error);
-            v.el.classList.toggle('blocked', !!r?.blocked);
+            const animated = !!(node && (node.animate ?? def?.animate));
+            const paused = !!def?.source && pausedScripts;
+
+            // state → border color; skipping propagates (blocked = an upstream node failed or was skipped)
+            let state: NodeState;
             let text = '';
-            if (!r) text = '';
-            else if (r.error) text = r.error;
-            else if (r.blocked) text = 'waiting on an upstream error';
-            else if (def && def.outputs.length) {
-                const first = def.outputs[0];
-                text = `${preview(r.outputs[first.name], r.lists[first.name])}${r.ms >= 0.05 ? ` · ${r.ms.toFixed(1)} ms` : ''}`;
+            if (node?.disabled) {
+                state = 'skipped';
+                text = 'disabled';
+            } else if (!r) {
+                state = 'skipped';
+                text = def?.output ? '' : 'skipped — nothing it feeds is shown';
+            } else if (paused && r.error) {
+                state = 'skipped';
+                text = scriptsSuspended.get() ? 'skipped — script nodes are paused' : 'skipped — the graph’s scripts aren’t trusted yet';
+            } else if (r.blocked) {
+                state = 'skipped';
+                const up = getNode(doc, r.blocked);
+                const name = up ? (up.title ?? registry.get(up.type)?.title ?? up.type) : 'an upstream node';
+                text = up?.disabled ? `skipped — ${name} is disabled` : `skipped — waiting on ${name}`;
+            } else if (r.error) {
+                state = 'error';
+                text = r.error;
+            } else {
+                state = r.ms >= (animated ? SLOW_ANIMATED_MS : SLOW_MS) ? 'slow' : 'ok';
+                const parts: string[] = [];
+                if (def && def.outputs.length) {
+                    const first = def.outputs[0];
+                    parts.push(preview(r.outputs[first.name], r.lists[first.name]));
+                }
+                if (r.ms >= 0.05) parts.push(`${r.ms.toFixed(1)} ms${state === 'slow' ? ' ⚠' : ''}`);
+                if (r.skipped?.length) parts.push(`${r.skipped.length} input${r.skipped.length === 1 ? '' : 's'} skipped`);
+                text = parts.join(' · ');
+            }
+
+            if (v.el.dataset.state !== state) {
+                v.el.dataset.state = state;
+                v.el.title = STATE_TEXT[state];
             }
             if (v.foot.textContent !== text) v.foot.textContent = text;
-            if (def) {
+            if (def && r && !r.error) {
                 for (const p of def.outputs) {
                     const pin = v.pins.get(`out:${p.name}`);
-                    if (pin && r && !r.error) pin.title = `${p.name}: ${p.type} = ${preview(r.outputs[p.name], r.lists[p.name])}`;
+                    if (pin) pin.title = `${p.name}: ${p.type} = ${preview(r.outputs[p.name], r.lists[p.name])}`;
                 }
             }
         }
         // viewports show whatever their scene input evaluated to
         for (const [id, vp] of this.viewports) {
-            const link = linksInto(doc, id, 'scene')[0];
+            const link = getNode(doc, id)?.disabled ? undefined : linksInto(doc, id, 'scene')[0];
             const src = link && res.get(link.from.node);
             const scene = src && !src.error && !src.blocked ? (src.outputs[link.from.port] as SceneData) : null;
             vp.engine.setScene(scene?.kind === 'scene2d' ? scene : null);
@@ -409,6 +464,20 @@ export class GraphCanvas {
         const size: [number, number] = node.size ?? [this.views.get(node.id)!.el.offsetWidth, host?.offsetHeight ?? 300];
         this.drag = { kind: 'resize', node: node.id, start: { x: e.clientX, y: e.clientY }, size };
         this.el.setPointerCapture(e.pointerId);
+    }
+
+    /** Disables the nodes, or enables them all if they're all disabled already. */
+    toggleDisabled(ids: string[]): void {
+        if (!ids.length) return;
+        const enable = ids.every((id) => getNode(doc, id)?.disabled);
+        edit('enable', (d) => {
+            for (const id of ids) {
+                const n = getNode(d, id);
+                if (!n) continue;
+                if (enable) delete n.disabled;
+                else n.disabled = true;
+            }
+        });
     }
 
     deleteNodes(ids: string[]): void {
@@ -668,6 +737,8 @@ export class GraphCanvas {
                 }
             } else if (e.key === 'f') {
                 this.fit();
+            } else if (e.key === 'm' && !mod) {
+                this.toggleDisabled([...selection.get()]);
             } else if (e.key === 'a' && !mod) {
                 const r = this.el.getBoundingClientRect();
                 this.addNodeAt(r.left + r.width / 2, r.top + r.height / 3);

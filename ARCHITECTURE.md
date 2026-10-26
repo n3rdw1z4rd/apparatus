@@ -73,3 +73,14 @@ A second page, **`graph.html`**, where the scene *is* a node graph (the scene ed
 
 Next: graph evaluation in a worker (watchdog for script nodes), behaviours (per-entity scripts
 with exec flow), subgraphs, 3D output.
+
+### Evaluation in a worker
+
+`src/graph/eval.worker.ts` owns the evaluator (and its cache) and compiles and runs script
+nodes; the editor keeps a mirror registry of node *interfaces* (pins, widgets) for the UI
+(`eval-client.ts` / `eval-protocol.ts`). The document is posted only when it changed; replies
+carry only the results that changed. Frames that arrive while the worker is busy fold into the
+next evaluation (no backlog). **Watchdog:** a request unanswered for 3 s replaces the worker
+and pauses script nodes (banner → fix the script, save, *resume*); built-in nodes keep
+evaluating meanwhile. Outputs that aren't plain data (functions, class instances) become a
+node error instead of breaking the reply.
