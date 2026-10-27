@@ -1,4 +1,5 @@
 import { EditorCamera, World, pickEntity, type ThreeEntity } from '@n3rdw1z4rd/core/three';
+import { BufferGeometry, Float32BufferAttribute, LineBasicMaterial, LineLoop } from 'three';
 import { Look, Meta, RigidBody, Shape } from '../core/components';
 import { normalizePart, type PartDef } from '../core/scene';
 import type { BehaviorRef, JointInit } from '../physics/protocol';
@@ -41,13 +42,26 @@ export class Engine {
     private frame = 0;
     private fitted = false;
     private readonly joints = new JointView();
+    /** the Camera node steers while playing, until you pan (double-click hands it back) */
+    private following = true;
+    /** you zoomed while following: the camera keeps your zoom */
+    private manualZoom = false;
+    /** your view from before play, put back on stop */
+    private savedView: { x: number; y: number; zoom: number } | null = null;
+    /** while building: what the Camera node will show */
+    private readonly frameGuide = new LineLoop(
+        new BufferGeometry().setAttribute('position', new Float32BufferAttribute([-0.5, -0.5, 0, 0.5, -0.5, 0, 0.5, 0.5, 0, -0.5, 0.5, 0], 3)),
+        new LineBasicMaterial({ color: 0x9b6dde, transparent: true, opacity: 0.6 }),
+    );
 
     constructor(container: HTMLElement) {
         this.camera.minZoom = 0.05;
         this.camera.maxZoom = 8;
         this.renderer = new Renderer(container, this.camera, this.world);
         this.renderer.canvas.classList.add('viewport-canvas');
-        this.renderer.overlay.add(this.joints.group);
+        this.renderer.overlay.add(this.joints.group, this.frameGuide);
+        this.frameGuide.visible = false;
+        this.frameGuide.frustumCulled = false;
         this.attachInput();
         this.renderer.start((dt) => this.tick(dt));
     }
@@ -109,6 +123,13 @@ export class Engine {
         this.time = 0;
         this.frame = 0;
         this.setState('playing');
+        if (this.scene.camera) {
+            const t = this.camera.target;
+            this.savedView = { x: t.x, y: t.y, zoom: this.camera.zoom };
+            this.following = true;
+            this.manualZoom = false;
+            this.followCamera(0, true);
+        }
     }
 
     stop(): void {
@@ -121,6 +142,12 @@ export class Engine {
         this.spawned.clear();
         this.time = 0;
         this.frame = 0;
+        if (this.savedView) {
+            this.camera.target.x = this.savedView.x;
+            this.camera.target.y = this.savedView.y;
+            this.camera.zoom = this.savedView.zoom;
+            this.savedView = null;
+        }
         this.setState('building');
         // snap back to what the graph says
         const scene = this.scene;
@@ -235,6 +262,48 @@ export class Engine {
         return out;
     }
 
+    /** Where the Camera node looks: the followed entity (as drawn) or its `at`. */
+    private cameraTarget(): { x: number; y: number } | null {
+        const c = this.scene?.camera;
+        if (!c) return null;
+        const e = c.follow ? this.byId.get(c.follow) : null;
+        return e && e.visible ? { x: e.position.x, y: e.position.y } : c.at;
+    }
+
+    /** Moves the camera toward the Camera node's target: outside the deadzone, smoothed. */
+    private followCamera(dt: number, snap = false): void {
+        const c = this.scene?.camera;
+        const target = this.cameraTarget();
+        if (!c || !target || !this.following) return;
+        const t = this.camera.target;
+        let wx = t.x, wy = t.y;
+        if (snap) {
+            wx = target.x;
+            wy = target.y;
+        } else {
+            const dx = target.x - t.x, dy = target.y - t.y;
+            if (Math.abs(dx) > c.deadzone.x) wx = target.x - Math.sign(dx) * c.deadzone.x;
+            if (Math.abs(dy) > c.deadzone.y) wy = target.y - Math.sign(dy) * c.deadzone.y;
+        }
+        const k = snap || c.smooth <= 0 ? 1 : 1 - Math.exp(-dt / c.smooth);
+        t.x += (wx - t.x) * k;
+        t.y += (wy - t.y) * k;
+        if (c.view > 0 && !this.manualZoom && this.camera.height > 1) {
+            this.camera.zoom += (this.camera.height / c.view - this.camera.zoom) * k;
+        }
+    }
+
+    /** While building: a frame around what the Camera node will show when play starts. */
+    private placeFrameGuide(): void {
+        const c = this.scene?.camera;
+        const target = this.cameraTarget();
+        const show = this.state === 'building' && !!c && !!target && c.view > 0 && this.camera.height > 1;
+        this.frameGuide.visible = show;
+        if (!show) return;
+        this.frameGuide.position.set(target!.x, target!.y, 0);
+        this.frameGuide.scale.set((c!.view * this.camera.width) / this.camera.height, c!.view, 1);
+    }
+
     /** A spawned body's part (+y down) → a drawn entity (+y up). */
     private entityFromPart(raw: PartDef): ThreeEntity {
         const part = normalizePart(raw)!;
@@ -302,7 +371,9 @@ export class Engine {
             this.frame++;
             this.onFrame(this.time, dt, this.frame);
             if (this.physics?.hung) this.restartPhysics();
+            this.followCamera(dt);
         }
+        this.placeFrameGuide();
         this.joints.update(this.scene, this.byId);
         this.renderer.draw({
             grid: 32,
@@ -332,6 +403,7 @@ export class Engine {
     }
 
     /**
+     * With a Camera node, panning while playing takes the camera over; double-click hands it back.
      * Building: drag pans. Playing: drag is the pointer — it grabs and throws bodies, and
      * behaviours see it (world.pointer); right / middle drag and two fingers pan. Wheel and
      * pinch zoom; double-click fits. Events don't reach the graph canvas.
@@ -394,11 +466,15 @@ export class Engine {
             if (pointers.size === 1) {
                 const k = scale();
                 this.camera.pan((cur.x - prev.x) / k, (cur.y - prev.y) / k);
+                this.following = false;
             } else if (pointers.size === 2) {
                 const [a, b] = [...pointers.values()];
                 const d = Math.hypot(a.x - b.x, a.y - b.y);
                 const c = local((a.x + b.x) / 2, (a.y + b.y) / 2);
-                if (pinch) this.camera.zoomAt(c.x, c.y, d / pinch);
+                if (pinch) {
+                    this.camera.zoomAt(c.x, c.y, d / pinch);
+                    this.manualZoom = true;
+                }
                 pinch = d;
             }
         });
@@ -427,14 +503,22 @@ export class Engine {
             if (w.kind === 'pan') {
                 const k = scale();
                 this.camera.pan(-w.dx / k, -w.dy / k);
+                this.following = false;
             } else {
                 const p = local(ev.clientX, ev.clientY);
                 this.camera.zoomAt(p.x, p.y, w.factor);
+                this.manualZoom = true;
             }
         }, { passive: false });
         el.addEventListener('dblclick', (ev) => {
             ev.stopPropagation();
-            this.fit();
+            // playing with a Camera node: hand the camera back to it; otherwise frame the scene
+            if (this.state === 'playing' && this.scene?.camera) {
+                this.following = true;
+                this.manualZoom = false;
+            } else {
+                this.fit();
+            }
         });
     }
 }

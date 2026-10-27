@@ -38,9 +38,26 @@ export interface EntityData {
     joints?: JointData[];
 }
 
+/** How the Viewport's camera behaves while playing (from the Camera node). */
+export interface CameraData {
+    /** the entity to follow (its id), or null: look at `at` */
+    follow: string | null;
+    /** what to call the followed entity (its tag, or its shape) */
+    followName?: string;
+    at: Vec2;
+    /** world px the view shows top to bottom (0: keep the zoom as it is) */
+    view: number;
+    /** seconds to catch up (0: stick to it) */
+    smooth: number;
+    /** how far (world px) the followed entity can stray from the center before the camera moves */
+    deadzone: Vec2;
+}
+
 export interface SceneData {
     kind: 'scene2d';
     entities: EntityData[];
+    /** null: the camera is yours (pan / zoom) */
+    camera?: CameraData | null;
     /** m/s², +y up */
     gravity: { x: number; y: number };
     background: string;
@@ -54,6 +71,7 @@ const isEntity = (v: any): v is EntityData => !!v && typeof v === 'object' && ty
 portTypes.define('entity', '#d3d3d3');
 portTypes.define('scene', '#f4d35e');
 portTypes.define('behavior', '#ff7f9f');
+portTypes.define('camera', '#9b6dde');
 
 export const SCENE_NODES: NodeSpec[] = [
     {
@@ -139,10 +157,11 @@ export const SCENE_NODES: NodeSpec[] = [
         inputs: {
             entities: { type: 'entity[]', multi: true, optional: true },
             gravity: { type: 'vec2', default: { x: 0, y: -9.81 } },
+            camera: { type: 'camera', optional: true },
         },
         params: { background: { type: 'color', default: '#111111' } },
         outputs: { scene: 'scene' },
-        run: ({ entities, gravity }, { background }) => {
+        run: ({ entities, gravity, camera }, { background }) => {
             const list = (entities as unknown[]).filter(isEntity);
             const seen = new Set<string>();
             // the same entity wired in twice would collide in the engine: suffix duplicates
@@ -156,8 +175,36 @@ export const SCENE_NODES: NodeSpec[] = [
             for (const e of unique) for (const j of e.joints ?? []) {
                 if (j.to !== null && !seen.has(j.to)) throw new Error(`a ${j.kind} on ${e.tag || e.id} joins ${j.to}, which isn't in this scene: wire it in too`);
             }
-            const scene: SceneData = { kind: 'scene2d', entities: unique, gravity: vec(gravity, { x: 0, y: -9.81 }), background: String(background ?? '#111111') };
+            const cam = camera && typeof camera === 'object' ? (camera as CameraData) : null;
+            if (cam?.follow != null && !seen.has(cam.follow)) throw new Error(`the camera follows ${cam.follow}, which isn't in this scene: wire it in too`);
+            const scene: SceneData = { kind: 'scene2d', entities: unique, gravity: vec(gravity, { x: 0, y: -9.81 }), background: String(background ?? '#111111'), camera: cam };
             return { scene };
+        },
+    },
+    {
+        type: 'scene/camera',
+        title: 'Camera',
+        description: 'steers the Viewport while playing: follows an entity (or looks at `at`); pan to take over, double-click to hand it back',
+        inputs: {
+            follow: { type: 'entity', optional: true },
+            at: { type: 'vec2', default: { x: 0, y: 0 } },
+            view: { type: 'number', default: 480, min: 0, step: 20 },
+            smooth: { type: 'number', default: 0.25, min: 0, step: 0.05 },
+            deadzone: { type: 'vec2', default: { x: 40, y: 30 } },
+        },
+        outputs: { camera: 'camera' },
+        run: ({ follow, at, view, smooth, deadzone }) => {
+            if (follow != null && !isEntity(follow)) throw new Error('`follow` needs an entity (or nothing, to look at `at`)');
+            const dz = vec(deadzone, { x: 40, y: 30 });
+            const camera: CameraData = {
+                follow: follow ? follow.id : null,
+                followName: follow ? follow.tag || follow.shape : undefined,
+                at: vec(at),
+                view: Math.max(0, num(view, 480)),
+                smooth: Math.max(0, num(smooth, 0.25)),
+                deadzone: { x: Math.max(0, dz.x), y: Math.max(0, dz.y) },
+            };
+            return { camera };
         },
     },
     {
