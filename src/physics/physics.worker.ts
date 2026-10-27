@@ -1,7 +1,7 @@
 /// <reference lib="webworker" />
 import type RAPIER from '@dimforge/rapier2d';
 import type { JointData, RevoluteImpulseJoint, RigidBody, World } from '@dimforge/rapier2d';
-import { Rng } from '@n3rdw1z4rd/core';
+import { degrees, radians, Rng } from '@n3rdw1z4rd/core';
 import { normalizePart, PART_DEFAULTS, PX_PER_M, type PartDef } from '../core/scene';
 import { compileScript, describeError, type ScriptHooks } from '../core/script';
 import { SPAWN_ID_BASE, type BehaviorRef, type FromWorker, type JointInit, type PointerMsg, type ToWorker, type Vec2 } from './protocol';
@@ -172,13 +172,13 @@ function view(b: BodyHandle): object {
         get alive() { return b.alive; },
         get x() { return b.x; },
         get y() { return -b.y; },
-        get angle() { return (-b.angle * 180) / Math.PI; },
+        get angle() { return degrees(-b.angle); },
         get vx() { return b.vx; },
         get vy() { return -b.vy; },
         accelerate: (ax: number, ay: number) => b.accelerate(ax, -ay),
         impulse: (dvx: number, dvy: number) => b.impulse(dvx, -dvy),
         setVelocity: (vx: number, vy: number) => b.setVelocity(vx, -vy),
-        spin: (degreesPerSecond: number) => b.setAngularVelocity((-degreesPerSecond * Math.PI) / 180),
+        spin: (degreesPerSecond: number) => b.setAngularVelocity(radians(-degreesPerSecond)),
         moveTo: (x: number, y: number) => b.moveTo(x, -y),
         remove: () => b.remove(),
     };
@@ -190,7 +190,7 @@ function view(b: BodyHandle): object {
 function partOfEntity(e: any): PartDef | null {
     if (!e || (e.shape !== 'box' && e.shape !== 'ball')) return null;
     return normalizePart({
-        shape: e.shape, x: e.x, y: -e.y, angle: -((e.angle ?? 0) * Math.PI) / 180,
+        shape: e.shape, x: e.x, y: -e.y, angle: -radians(e.angle ?? 0),
         w: e.w, h: e.h, r: e.r, color: e.color, tag: e.tag || undefined,
         fixed: e.body?.fixed, friction: e.body?.friction, bounce: e.body?.bounce, density: e.body?.density,
     });

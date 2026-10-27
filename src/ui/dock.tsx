@@ -1,3 +1,4 @@
+import { clamp } from '@n3rdw1z4rd/core';
 import { computed } from '@n3rdw1z4rd/smoke-ui';
 import { SECTIONS } from '../app/controls';
 import { activeTab, sheetFraction } from '../app/ui-state';
@@ -18,7 +19,7 @@ function SheetGrip(): HTMLElement {
     const resizeTo = (clientY: number) => {
         const rect = app().getBoundingClientRect();
         const fraction = (rect.bottom - clientY) / rect.height;
-        sheetFraction.set(Math.min(0.85, Math.max(0.2, fraction)));
+        sheetFraction.set(clamp(fraction, 0.2, 0.85));
     };
 
     // touch

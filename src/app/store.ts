@@ -1,5 +1,5 @@
 import { computed, Signal } from '@n3rdw1z4rd/smoke-ui';
-import { log } from '@n3rdw1z4rd/core';
+import { log, radians } from '@n3rdw1z4rd/core';
 import { EditorCamera, World, type SceneDoc, type ThreeEntity } from '@n3rdw1z4rd/core/three';
 import {
     Meta, RigidBody, Shape, addPart, boundsOf, partEntities, partOf, partsOf, snapPosition,
@@ -341,7 +341,7 @@ export function rotateSelected(degrees: number): void {
     const e = selected.get();
     if (e === null || mode.get() === 'play') return;
     // positive degrees turn clockwise on screen; three.js angles are counter-clockwise
-    const step = (Math.PI / 180) * -degrees;
+    const step = radians(-degrees);
     let angle = Math.round((e.rotation.z + step) / step) * step;
     if (Math.abs(angle) >= Math.PI * 2 - 1e-6) angle = 0;
     e.rotation.z = angle;

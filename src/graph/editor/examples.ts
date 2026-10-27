@@ -1,4 +1,6 @@
+import { radians } from '@n3rdw1z4rd/core';
 import { addNode, connect, createGraph, type GraphDoc, type GraphNode, type NodeRegistry } from '@n3rdw1z4rd/core/graph';
+import { PALETTE } from '../../core/scene';
 
 /* ------------------------------------------------------------------ */
 /* Example graphs (the Examples menu). Coordinates are the editor's:    */
@@ -15,7 +17,6 @@ export interface Example {
 
 const G = 32;
 const FIXED = '#5b6b73';
-const PALETTE = ['#e8554e', '#f2a541', '#f4d35e', '#3fd1a4', '#4ea8de', '#9b6dde', '#e86fb0', '#d3d3d3'];
 
 type Node = GraphNode;
 
@@ -363,7 +364,7 @@ function cradle(registry: NodeRegistry): GraphDoc {
     link(ties, 'points', rope, 'toAt');
 
     // the fifth, lifted out to the left on its rope (as placed: the same length)
-    const a = (55 * Math.PI) / 180;
+    const a = radians(55);
     const x0 = -3 * R;
     const lifted = add('shape/ball', 250, 460, { at: { x: x0 - L * Math.sin(a), y: top - L * Math.cos(a) }, radius: R, color: '#e8554e' });
     const liftedBody = body(lifted, 500, 460, { bounce: 1, friction: 0, density: 4 });
@@ -406,6 +407,65 @@ function car(registry: NodeRegistry): GraphDoc {
     return b.g;
 }
 
+/* ── camera ──────────────────────────────────────────────────────── */
+
+const ZIGZAG_SCRIPT = `// Zigzag: ramps stacked down a tower, each tilted the other way to the one above.
+export const title = 'Zigzag';
+export const description = 'positions and angles for a tower of alternating ramps';
+export const inputs = {
+    count: { type: 'number', default: 10, min: 1, step: 1 },
+    drop: { type: 'number', default: 130, min: 10, step: 10 },
+    shift: { type: 'number', default: 60, step: 10 },
+    tilt: { type: 'number', default: 9, step: 1 },
+};
+export const outputs = { points: 'vec2[]', angles: 'number[]' };
+
+export function run({ count, drop, shift, tilt }) {
+    const points = [], angles = [];
+    for (let i = 0; i < count; i++) {
+        const right = i % 2 === 0; // even ramps run down to the right
+        points.push({ x: right ? -shift : shift, y: -i * drop });
+        angles.push(right ? -tilt : tilt);
+    }
+    return { points, angles };
+}
+`;
+
+/** a marble rolls down a tower of ramps taller than the view; a Camera follows it */
+function marble(registry: NodeRegistry): GraphDoc {
+    const b = builder(registry);
+    const { add, link, body, output, script } = b;
+    script('examples/zigzag', ZIGZAG_SCRIPT, {
+        type: 'examples/zigzag', title: 'Zigzag', category: 'scripts', source: ZIGZAG_SCRIPT,
+        inputs: {
+            count: { type: 'number', default: 10 }, drop: { type: 'number', default: 130 },
+            shift: { type: 'number', default: 60 }, tilt: { type: 'number', default: 9 },
+        },
+        outputs: { points: 'vec2[]', angles: 'number[]' },
+        run: () => ({}),
+    });
+    const zig = add('examples/zigzag', 0, 0, { count: 10, drop: 130, shift: 60, tilt: 14 });
+    const ramp = add('shape/box', 250, 0, { size: { x: 380, y: 14 }, color: FIXED });
+    link(zig, 'points', ramp, 'at');
+    link(zig, 'angles', ramp, 'angle');
+    const ramps = body(ramp, 500, 0, { fixed: true, friction: 0.3 });
+
+    // side walls keep the marble in the tower
+    const wallAt = add('list/grid2d', 0, 260, { cols: 2, rows: 1, spacing: { x: 520, y: 0 }, center: { x: 0, y: -600 } });
+    const wall = add('shape/box', 250, 260, { size: { x: 14, y: 1400 }, color: FIXED });
+    link(wallAt, 'points', wall, 'at');
+    const walls = body(wall, 500, 260, { fixed: true });
+    const cup = body(add('shape/box', 250, 490, { at: { x: 0, y: -1310 }, size: { x: 534, y: 14 }, color: FIXED }), 500, 490, { fixed: true });
+
+    const ball = body(add('shape/ball', 250, 720, { at: { x: -200, y: 40 }, radius: 12, color: '#e8554e' }), 500, 720, { bounce: 0.3, friction: 0.4, density: 2 });
+    const cam = add('scene/camera', 750, 720, { view: 420, smooth: 0.3, deadzone: { x: 60, y: 40 } });
+    link(ball, 'entity', cam, 'follow');
+
+    const scene = output(1050, 300, [ramps, walls, cup, ball]);
+    link(cam, 'camera', scene, 'camera');
+    return b.g;
+}
+
 export const EXAMPLES: Example[] = [
     { id: 'sandbox', label: 'Sandbox', description: 'the original apparatus scene', make: sandbox },
     { id: 'plinko', label: 'Plinko', description: 'pegs from a staggered grid, balls to drop, an animated spinner', make: plinko },
@@ -418,6 +478,7 @@ export const EXAMPLES: Example[] = [
     { id: 'dropper', label: 'Dropper', description: 'behaviours: a Spawner nozzle keeps dropping balls through plinko pegs', make: dropper },
     { id: 'cradle', label: 'Cradle', description: 'joints: balls on ropes (a rough Newton’s cradle) and a box on a spring', make: cradle },
     { id: 'car', label: 'Car', description: 'joints: wheels anchored to a chassis with hinges; the back one has a motor', make: car },
+    { id: 'marble', label: 'Marble run', description: 'camera: a Camera node follows a marble down a tower of ramps (pan to take over, double-click to hand back)', make: marble },
     { id: 'magnet', label: 'Magnet', description: 'behaviours: drag the red ball while playing — it pulls the others in', make: magnet },
 ];
 

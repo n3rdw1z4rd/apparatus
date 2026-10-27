@@ -116,18 +116,52 @@ export function run({ entity }, { tag }) {
 }
 `,
 
+    'scene/camera': `export const title = 'Camera';
+export const description = 'steers the Viewport while playing: follows an entity (or looks at \`at\`); pan to take over, double-click to hand it back';
+export const inputs = {
+    follow: { type: 'entity', optional: true },
+    at: { type: 'vec2', default: { x: 0, y: 0 } },
+    view: { type: 'number', default: 480, min: 0, step: 20 },
+    smooth: { type: 'number', default: 0.25, min: 0, step: 0.05 },
+    deadzone: { type: 'vec2', default: { x: 40, y: 30 } },
+};
+export const outputs = { camera: 'camera' };
+
+// A camera: { follow (an entity id, or null: look at \`at\`), followName (its tag or shape), at, view (world px top to bottom;
+//   0 keeps the zoom), smooth (seconds to catch up; 0 sticks), deadzone (px the followed entity
+//   can stray from the center before the camera moves) }
+
+${helpers}
+
+export function run({ follow, at, view, smooth, deadzone }) {
+    if (follow != null && !isEntity(follow)) throw new Error('\`follow\` needs an entity (or nothing, to look at \`at\`)');
+    const dz = vec(deadzone, { x: 40, y: 30 });
+    return {
+        camera: {
+            follow: follow ? follow.id : null,
+            followName: follow ? follow.tag || follow.shape : undefined,
+            at: vec(at),
+            view: Math.max(0, num(view, 480)),
+            smooth: Math.max(0, num(smooth, 0.25)),
+            deadzone: { x: Math.max(0, dz.x), y: Math.max(0, dz.y) },
+        },
+    };
+}
+`,
+
     'scene/scene2d': `export const title = 'Scene';
 export const description = 'collects entities (wire in as many as you like) and world settings';
 export const inputs = {
     entities: { type: 'entity[]', multi: true, optional: true },
     gravity: { type: 'vec2', default: { x: 0, y: -9.81 } },
+    camera: { type: 'camera', optional: true },
 };
 export const params = { background: { type: 'color', default: '#111111' } };
 export const outputs = { scene: 'scene' };
 
 ${helpers}
 
-export function run({ entities, gravity }, { background }) {
+export function run({ entities, gravity, camera }, { background }) {
     const seen = new Set();
     // the same entity wired in twice would collide in the engine: suffix duplicates
     const unique = entities.filter(isEntity).map((e) => {
@@ -140,12 +174,15 @@ export function run({ entities, gravity }, { background }) {
     for (const e of unique) for (const j of e.joints ?? []) {
         if (j.to !== null && !seen.has(j.to)) throw new Error(\`a \${j.kind} on \${e.tag || e.id} joins \${j.to}, which isn't in this scene: wire it in too\`);
     }
+    const cam = camera && typeof camera === 'object' ? camera : null;
+    if (cam?.follow != null && !seen.has(cam.follow)) throw new Error(\`the camera follows \${cam.follow}, which isn't in this scene: wire it in too\`);
     return {
         scene: {
             kind: 'scene2d',
             entities: unique,
             gravity: vec(gravity, { x: 0, y: -9.81 }),
             background: String(background ?? '#111111'),
+            camera: cam,
         },
     };
 }

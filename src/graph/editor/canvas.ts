@@ -1,3 +1,4 @@
+import { clamp } from '@n3rdw1z4rd/core';
 import {
     addNode, canConnect, collapseToSubgraph, connect, disconnect, expandSubgraph, getNode, graphId, linksInto, portTypes,
     removeNode, type GraphGroup, type GraphNode, type NodeDef, type PortRef, type SubgraphDef,
@@ -158,7 +159,7 @@ export class GraphCanvas {
         const r = this.el.getBoundingClientRect();
         const px = cx - r.left;
         const py = cy - r.top;
-        const z = Math.min(2.5, Math.max(0.15, this.view.zoom * factor));
+        const z = clamp(this.view.zoom * factor, 0.15, 2.5);
         this.view.x = px - ((px - this.view.x) * z) / this.view.zoom;
         this.view.y = py - ((py - this.view.y) * z) / this.view.zoom;
         this.view.zoom = z;
@@ -180,7 +181,7 @@ export class GraphCanvas {
         const pad = 60;
         // don't zoom out so far that nodes become unreadable. A graph too wide to fit keeps its
         // right side in view — that's where the output (the viewport) is
-        const z = Math.min(1.2, Math.max(0.75, Math.min((r.width - pad * 2) / (maxX - minX), (r.height - pad * 2) / (maxY - minY))));
+        const z = clamp(Math.min((r.width - pad * 2) / (maxX - minX), (r.height - pad * 2) / (maxY - minY)), 0.75, 1.2);
         const fitsX = (maxX - minX) * z <= r.width - pad * 2;
         const fitsY = (maxY - minY) * z <= r.height - pad * 2;
         this.view = {

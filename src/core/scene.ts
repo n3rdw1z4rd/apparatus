@@ -1,4 +1,4 @@
-import { Rng } from '@n3rdw1z4rd/core';
+import { clamp, Rng } from '@n3rdw1z4rd/core';
 
 /* ------------------------------------------------------------------ */
 /* A scene is plain data: everything needed to rebuild the world.       */
@@ -72,7 +72,7 @@ export function randomSeed(): number {
 /* ------------------------------------------------------------------ */
 
 const num = (v: unknown, fallback: number, min = -1e6, max = 1e6): number =>
-    typeof v === 'number' && Number.isFinite(v) ? Math.min(max, Math.max(min, v)) : fallback;
+    typeof v === 'number' && Number.isFinite(v) ? clamp(v, min, max) : fallback;
 
 const COLOR_RE = /^#[0-9a-f]{3,8}$|^[a-z]{3,20}$|^(rgb|hsl)a?\([\d\s.,%]+\)$/i;
 

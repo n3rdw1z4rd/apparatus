@@ -1,3 +1,4 @@
+import { clamp } from '@n3rdw1z4rd/core';
 import type { WidgetSpec } from '@n3rdw1z4rd/core/graph';
 import { parseType } from '@n3rdw1z4rd/core/graph';
 import { h } from './dom';
@@ -71,14 +72,14 @@ export function widget(type: string, spec: WidgetSpec, value: unknown, commit: (
 
 function numberField(value: number, spec: WidgetSpec, commit: (v: unknown) => void): HTMLInputElement {
     const step = spec.step ?? 1;
-    const clamp = (v: number) => Math.min(spec.max ?? Infinity, Math.max(spec.min ?? -Infinity, v));
+    const limit = (v: number) => clamp(v, spec.min ?? -Infinity, spec.max ?? Infinity);
     const fmt = (v: number) => String(Math.round(v * 1000) / 1000);
     const inp = h('input', { type: 'text', inputMode: 'decimal', className: 'gw-num', title: 'drag sideways to scrub' });
     inp.value = fmt(value);
     let current = value;
 
     const set = (v: number) => {
-        current = clamp(v);
+        current = limit(v);
         inp.value = fmt(current);
         commit(current);
     };
@@ -147,9 +148,16 @@ export function preview(v: unknown, list = false): string {
         if ('x' in o && 'y' in o && Object.keys(o).length <= 3) return `(${preview(o.x)}, ${preview(o.y)})`;
         if (o.kind === 'scene2d') return `scene · ${(o.entities as unknown[]).length} entities`;
         if (o.kind === 'behavior') return `behaviour · ${String(o.type).split('/').pop()}`;
+        if ('deadzone' in o && 'view' in o) {
+            const view = o.view ? ` · ${preview(o.view)}px tall` : '';
+            return o.follow ? `camera · follows ${String(o.followName ?? o.follow)}${view}` : `camera @ ${preview(o.at)}${view}`;
+        }
         if (typeof o.shape === 'string') {
             const n = Array.isArray(o.behaviors) ? o.behaviors.length : 0;
-            return `${o.shape} @ (${preview(o.x)}, ${preview(o.y)})${n ? ` · ${n} behaviour${n === 1 ? '' : 's'}` : ''}`;
+            const j = Array.isArray(o.joints) ? o.joints.length : 0;
+            return `${o.shape} @ (${preview(o.x)}, ${preview(o.y)})`
+                + (n ? ` · ${n} behaviour${n === 1 ? '' : 's'}` : '')
+                + (j ? ` · ${j} joint${j === 1 ? '' : 's'}` : '');
         }
     }
     return String(v);
