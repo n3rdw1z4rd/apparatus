@@ -13,6 +13,8 @@ export interface BehaviorRef {
 
 export interface BodyInit {
     id: number;
+    /** the scene entity it was made from (behaviours look bodies up by it: world.get) */
+    key?: string;
     part: PartDef;
     behaviors?: BehaviorRef[];
 }
@@ -84,6 +86,8 @@ export type FromWorker =
         removed: number[];
         /** set once when the running script failed and was stopped */
         scriptError?: string;
+        /** bodies behaviours switched off / on since the last frame: [id, enabled] */
+        toggled?: [number, boolean][];
         /** behaviours that threw and were switched off (on that body) */
         behaviorErrors?: { node: string; type: string; message: string }[];
     }

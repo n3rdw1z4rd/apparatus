@@ -13,6 +13,7 @@ export interface FrameInfo {
     stepMs: number;
     spawned: SpawnedBody[];
     removed: number[];
+    toggled?: [number, boolean][];
     scriptError?: string;
     behaviorErrors?: { node: string; type: string; message: string }[];
 }

@@ -1,6 +1,6 @@
 /// <reference lib="webworker" />
 import type RAPIER from '@dimforge/rapier2d';
-import type { JointData, RevoluteImpulseJoint, RigidBody, World } from '@dimforge/rapier2d';
+import type { Collider, EventQueue, JointData, RevoluteImpulseJoint, RigidBody, World } from '@dimforge/rapier2d';
 import { degrees, radians, Rng } from '@n3rdw1z4rd/core';
 import { normalizePart, PART_DEFAULTS, PX_PER_M, type PartDef } from '../core/scene';
 import { compileScript, describeError, type ScriptHooks } from '../core/script';
@@ -38,6 +38,9 @@ let nextSpawnId = SPAWN_ID_BASE;
 let playToken = 0;
 let spawned: { id: number; part: PartDef }[] = [];
 let removed: number[] = [];
+let toggled: [number, boolean][] = [];
+/** collision / overlap events, for behaviours' enter / exit */
+let events: EventQueue | null = null;
 
 /* ------------------------------------------------------------------ */
 /* Script-facing body handles (world px, px/s)                          */
@@ -53,16 +56,19 @@ class BodyHandle {
     readonly w: number;
     readonly h: number;
     readonly r: number;
-    readonly fixed: boolean;
+    fixed: boolean;
     readonly tag: string;
+    readonly sensor: boolean;
     alive = true;
+    enabled = true;
 
-    constructor(readonly id: number, public readonly rb: RigidBody, part: PartDef) {
+    constructor(readonly id: number, public readonly rb: RigidBody, readonly collider: Collider, part: PartDef, readonly key: string | null = null) {
         this.shape = part.shape;
         this.w = part.w ?? 0;
         this.h = part.h ?? 0;
         this.r = part.r ?? 0;
         this.fixed = !!part.fixed;
+        this.sensor = !!part.sensor;
         this.tag = part.tag ?? '';
         this.sync();
     }
@@ -110,9 +116,26 @@ class BodyHandle {
         this.y = y;
     }
 
+    /** Makes the body fixed (immovable) or dynamic. */
+    setFixed(fixed: boolean): void {
+        if (!this.alive || this.fixed === !!fixed) return;
+        this.fixed = !!fixed;
+        this.rb.setBodyType(fixed ? R.RigidBodyType.Fixed : R.RigidBodyType.Dynamic, true);
+    }
+
+    /** Takes the body out of the simulation (and the view) until it's enabled again. */
+    setEnabled(on: boolean): void {
+        if (!this.alive || this.enabled === !!on) return;
+        this.enabled = !!on;
+        this.rb.setEnabled(this.enabled);
+        toggled.push([this.id, this.enabled]);
+    }
+
     remove(): void {
         if (!this.alive || !world) return;
         this.alive = false;
+        byCollider.delete(this.collider.handle);
+        if (this.key) byKey.delete(this.key);
         world.removeRigidBody(this.rb);
         handles.delete(this.rb.handle);
         removed.push(this.id);
@@ -120,6 +143,8 @@ class BodyHandle {
 }
 
 const handles = new Map<number, BodyHandle>(); // rapier handle -> body
+const byCollider = new Map<number, BodyHandle>(); // collider handle -> body
+const byKey = new Map<string, BodyHandle>(); // scene entity id -> body
 
 /* ------------------------------------------------------------------ */
 /* Behaviours (from the node graph). Their API is in editor            */
@@ -130,6 +155,18 @@ const handles = new Map<number, BodyHandle>(); // rapier handle -> body
 interface BehaviorModule {
     step?: (self: unknown, world: unknown, dt: number, params: unknown, state: object) => void;
     setup?: (self: unknown, world: unknown, params: unknown, state: object) => void;
+    enter?: (self: unknown, other: unknown, world: unknown, params: unknown, state: object, hit: Hit) => void;
+    exit?: (self: unknown, other: unknown, world: unknown, params: unknown, state: object, hit: Hit) => void;
+}
+
+/** What enter / exit get about the touch (editor coordinates: +y up). */
+interface Hit {
+    /** unit vector from self toward other */
+    normal: Vec2;
+    /** how fast they came together along the normal, px/s (0 for exit) */
+    speed: number;
+    /** one of the two is a sensor (an overlap, not a collision) */
+    sensor: boolean;
 }
 
 interface Running {
@@ -169,7 +206,9 @@ function view(b: BodyHandle): object {
         get h() { return b.h; },
         get r() { return b.r; },
         get fixed() { return b.fixed; },
+        get sensor() { return b.sensor; },
         get alive() { return b.alive; },
+        get enabled() { return b.enabled; },
         get x() { return b.x; },
         get y() { return -b.y; },
         get angle() { return degrees(-b.angle); },
@@ -180,6 +219,8 @@ function view(b: BodyHandle): object {
         setVelocity: (vx: number, vy: number) => b.setVelocity(vx, -vy),
         spin: (degreesPerSecond: number) => b.setAngularVelocity(radians(-degreesPerSecond)),
         moveTo: (x: number, y: number) => b.moveTo(x, -y),
+        setFixed: (fixed: boolean) => b.setFixed(fixed),
+        setEnabled: (on: boolean) => b.setEnabled(on),
         remove: () => b.remove(),
     };
     views.set(b, v);
@@ -192,13 +233,19 @@ function partOfEntity(e: any): PartDef | null {
     return normalizePart({
         shape: e.shape, x: e.x, y: -e.y, angle: -radians(e.angle ?? 0),
         w: e.w, h: e.h, r: e.r, color: e.color, tag: e.tag || undefined,
-        fixed: e.body?.fixed, friction: e.body?.friction, bounce: e.body?.bounce, density: e.body?.density,
+        fixed: e.body?.fixed, friction: e.body?.friction, bounce: e.body?.bounce, density: e.body?.density, sensor: e.body?.sensor,
     });
 }
 
 const behaviorWorld = {
     get bodies() { return [...handles.values()].map(view); },
     find(tag: string) { return [...handles.values()].filter((b) => b.tag === tag).map(view); },
+    /** the body made from a scene entity (as wired into a behaviour's params), or null */
+    get(entity: unknown): object | null {
+        const key = typeof entity === 'string' ? entity : (entity as { id?: unknown } | null)?.id;
+        const b = typeof key === 'string' ? byKey.get(key) : undefined;
+        return b && b.alive ? view(b) : null;
+    },
     /** spawns an entity (as the graph makes them; its own behaviours come along) */
     spawn(entity: any): object | null {
         const part = partOfEntity(entity);
@@ -244,7 +291,55 @@ async function attachBehaviors(body: BodyHandle, refs: BehaviorRef[], runSetup: 
     }
     if (!body.alive) return;
     behaviors.set(body, [...(behaviors.get(body) ?? []), ...list]);
+    // only bodies that listen pay for collision events
+    if (list.some((r) => r.mod.enter || r.mod.exit)) body.collider.setActiveEvents(R.ActiveEvents.COLLISION_EVENTS);
     if (runSetup) for (const r of list) runOne(body, r, 'setup', 0);
+}
+
+/** Runs enter / exit on a body's behaviours that have it. */
+function runTouch(body: BodyHandle, other: BodyHandle, hook: 'enter' | 'exit', hit: Hit): void {
+    for (const r of behaviors.get(body) ?? []) {
+        if (r.off || !r.mod[hook] || !body.alive) continue;
+        try {
+            r.mod[hook]!(view(body), view(other), behaviorWorld, r.ref.params, r.state, hit);
+        } catch (err) {
+            behaviorFailed(r, err);
+        }
+    }
+}
+
+/**
+ * The collision events of the last step, to each side's behaviours. The normal comes from the
+ * contact (from a's center toward b's for sensors); the speed from the velocities before the step.
+ */
+function dispatchTouches(): void {
+    if (!events || !world) return;
+    const list: [BodyHandle, BodyHandle, boolean][] = [];
+    events.drainCollisionEvents((h1, h2, started) => {
+        const a = byCollider.get(h1), b = byCollider.get(h2);
+        if (a && b && a !== b) list.push([a, b, started]);
+    });
+    for (const [a, b, started] of list) {
+        if (!a.alive || !b.alive || (!behaviors.has(a) && !behaviors.has(b))) continue;
+        const sensor = a.sensor || b.sensor;
+        let nx = b.x - a.x, ny = b.y - a.y; // +y down here
+        if (started && !sensor) {
+            world.contactPair(a.collider, b.collider, (m, flipped) => {
+                const n = m.normal();
+                if (Number.isFinite(n.x) && (n.x || n.y)) [nx, ny] = flipped ? [-n.x, -n.y] : [n.x, n.y];
+            });
+        }
+        const len = Math.hypot(nx, ny) || 1;
+        nx /= len;
+        ny /= len;
+        const speed = started ? Math.abs((a.vx - b.vx) * nx + (a.vy - b.vy) * ny) : 0;
+        a.sync();
+        b.sync();
+        const hook = started ? 'enter' : 'exit';
+        // views are +y up
+        runTouch(a, b, hook, { normal: { x: nx, y: -ny }, speed, sensor });
+        if (b.alive && a.alive) runTouch(b, a, hook, { normal: { x: -nx, y: ny }, speed, sensor });
+    }
 }
 
 function runOne(body: BodyHandle, r: Running, hook: 'setup' | 'step', dt: number): void {
@@ -261,7 +356,7 @@ function currentDt(): number {
     return (1 / STEP_HZ) * timeScale;
 }
 
-function createBody(id: number, raw: PartDef): BodyHandle | null {
+function createBody(id: number, raw: PartDef, key: string | null = null): BodyHandle | null {
     if (!world) return null;
     const part = normalizePart(raw);
     if (!part) return null;
@@ -280,11 +375,14 @@ function createBody(id: number, raw: PartDef): BodyHandle | null {
         .setFriction(part.friction ?? PART_DEFAULTS.friction)
         .setRestitution(part.bounce ?? PART_DEFAULTS.bounce)
         .setDensity(part.density ?? PART_DEFAULTS.density);
+    if (part.sensor) collider.setSensor(true).setActiveEvents(R.ActiveEvents.COLLISION_EVENTS);
 
-    world.createCollider(collider, rb);
+    const c = world.createCollider(collider, rb);
 
-    const handle = new BodyHandle(id, rb, part);
+    const handle = new BodyHandle(id, rb, c, part, key);
     handles.set(rb.handle, handle);
+    byCollider.set(c.handle, handle);
+    if (key) byKey.set(key, handle);
     return handle;
 }
 
@@ -363,7 +461,11 @@ function freeWorld(): void {
     clearInterval(timer);
     timer = 0;
     handles.clear();
+    byCollider.clear();
+    byKey.clear();
     behaviors.clear();
+    events?.free();
+    events = null;
     world?.free();
     world = null;
     hooks = null;
@@ -383,12 +485,14 @@ async function play(msg: Extract<ToWorker, { t: 'play' }>): Promise<void> {
     nextSpawnId = SPAWN_ID_BASE;
     spawned = [];
     removed = [];
+    toggled = [];
     scriptError = undefined;
+    events = new R.EventQueue(true);
 
     behaviorErrors = [];
     const withBehaviors: [BodyHandle, BehaviorRef[]][] = [];
     for (const b of msg.bodies) {
-        const body = createBody(b.id, b.part);
+        const body = createBody(b.id, b.part, b.key ?? null);
         if (body && b.behaviors?.length) withBehaviors.push([body, b.behaviors]);
     }
     if (msg.joints?.length) createJoints(msg.joints);
@@ -462,9 +566,12 @@ function stepOnce(): void {
     applyGrab();
 
     world.timestep = dt;
-    world.step();
+    // velocities before the step, for how hard things hit (enter's hit.speed)
+    if (behaviors.size) for (const b of handles.values()) b.sync();
+    world.step(events ?? undefined);
     time += dt;
     frame++;
+    dispatchTouches();
 
     // Anything that fell far out of the world (or went NaN) is removed.
     for (const b of handles.values()) {
@@ -494,12 +601,14 @@ function sendFrame(stepMs: number): void {
     post({
         t: 'frame', data, time, frame, stepMs,
         spawned, removed,
+        ...(toggled.length ? { toggled } : {}),
         scriptError,
         ...(behaviorErrors.length ? { behaviorErrors } : {}),
     }, [data.buffer]);
 
     spawned = [];
     removed = [];
+    toggled = [];
     scriptError = undefined;
     behaviorErrors = [];
 }

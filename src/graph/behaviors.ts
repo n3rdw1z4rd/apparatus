@@ -1,11 +1,11 @@
 import { behaviorRun, type NodeSpec } from '@n3rdw1z4rd/core/graph';
 
 /* ------------------------------------------------------------------ */
-/* Behaviour nodes. A behaviour node is a module that exports `step`    */
-/* (and maybe `setup`) besides its interface: in the graph it evaluates */
-/* to a behaviour value; wired into an entity with Behave, the physics  */
-/* worker imports the same module and runs `step` every physics step    */
-/* on that entity while the viewport plays.                             */
+/* Behaviour nodes. A behaviour node is a module that exports hooks     */
+/* (setup, step, enter, exit) besides its interface: in the graph it    */
+/* evaluates to a behaviour value; wired into an entity with Behave,    */
+/* the physics worker imports the same module and runs its hooks on     */
+/* that entity while the viewport plays.                                */
 /* ------------------------------------------------------------------ */
 
 /** The API, at the top of every behaviour's code. */
@@ -13,25 +13,33 @@ export const BEHAVIOR_API = `// A behaviour runs on the entity it's wired into (
 // the viewport plays. Editor coordinates: world px, +y up, angles in degrees (counter-
 // clockwise), seconds. Behaviours run on entities that have a Rigid Body.
 //
-//   setup(self, world, params, state)      once, when play starts   (optional)
-//   step(self, world, dt, params, state)   every physics step (60/s)
+// Export any of these (all optional):
+//   setup(self, world, params, state)               once, when play starts
+//   step(self, world, dt, params, state)            every physics step (60/s)
+//   enter(self, other, world, params, state, hit)   another body starts touching this one (or,
+//                                                   when either is a sensor, overlapping it)
+//   exit(self, other, world, params, state, hit)    ... and stops
 //
-//   self    this entity: id, tag, shape, x, y, angle, vx, vy, w, h, r, fixed, alive,
-//           accelerate(ax, ay)  px/s², this step      impulse(dvx, dvy)  px/s, now
+//   self    this entity: id, tag, shape, x, y, angle, vx, vy, w, h, r, fixed, sensor, alive,
+//           enabled, accelerate(ax, ay)  px/s², this step      impulse(dvx, dvy)  px/s, now
 //           setVelocity(vx, vy)    spin(degreesPerSecond)    moveTo(x, y)    remove()
-//   world   bodies, find(tag), spawn(entity) → a body, gravity { x, y } (m/s², assignable),
-//           pointer { x, y, down, active }, time, frame, rng (nextFloat, range, pick, chance)
+//           setFixed(fixed)    setEnabled(on)  (off: out of the simulation and the view)
+//   other   the other body, the same way
+//   hit     { normal: { x, y } (unit, from self toward other), speed (px/s they met at), sensor }
+//   world   bodies, find(tag), get(entity) → the body made from an entity wired into this node,
+//           spawn(entity) → a body, gravity { x, y } (m/s², assignable), pointer { x, y, down,
+//           active }, time, frame, rng (nextFloat, range, pick, chance)
 //   params  this node's inputs and params (as evaluated)
-//   state   an object of your own, one per entity, kept between steps`;
+//   state   an object of your own, one per entity, kept between calls`;
 
-const spec = (s: Omit<NodeSpec, 'run' | 'outputs' | 'category'> & { step: string }): NodeSpec => {
-    const { step, ...rest } = s;
+const spec = (s: Omit<NodeSpec, 'run' | 'outputs' | 'category'> & { code: string }): NodeSpec => {
+    const { code, ...rest } = s;
     return {
         ...rest,
         category: 'behavior',
         outputs: { behavior: 'behavior' },
         run: behaviorRun,
-        source: `${header(rest)}\n${BEHAVIOR_API}\n\n${step.trim()}\n`,
+        source: `${header(rest)}\n${BEHAVIOR_API}\n\n${code.trim()}\n`,
     };
 };
 
@@ -51,7 +59,7 @@ export const BEHAVIOR_NODES: NodeSpec[] = [
         description: 'a constant force (like a rocket or a wind)',
         inputs: { force: { type: 'vec2', default: { x: 0, y: 600 } } },
         params: { local: { type: 'boolean', default: false } },
-        step: `
+        code: `
 export function step(self, world, dt, { force, local }) {
     let fx = force.x, fy = force.y;
     if (local) {
@@ -72,7 +80,7 @@ export function step(self, world, dt, { force, local }) {
             reach: { type: 'number', default: 400, min: 0, step: 10 },
             width: { type: 'number', default: 0, min: 0, step: 4 },
         },
-        step: `
+        code: `
 export function step(self, world, dt, { strength, reach, width }) {
     const a = (self.angle * Math.PI) / 180;
     const dx = Math.cos(a), dy = Math.sin(a);
@@ -98,7 +106,7 @@ export function step(self, world, dt, { strength, reach, width }) {
             radius: { type: 'number', default: 300, min: 0, step: 10 },
         },
         params: { tag: { type: 'string', default: '' } },
-        step: `
+        code: `
 export function step(self, world, dt, { strength, radius, tag }) {
     for (const b of tag ? world.find(tag) : world.bodies) {
         if (b.fixed || b.id === self.id) continue;
@@ -120,7 +128,7 @@ export function step(self, world, dt, { strength, radius, tag }) {
             maxSpeed: { type: 'number', default: 1200, min: 0, step: 50 },
         },
         params: { whilePressed: { type: 'boolean', default: true } },
-        step: `
+        code: `
 export function step(self, world, dt, { stiffness, maxSpeed, whilePressed }) {
     const p = world.pointer;
     if (!p.active || (whilePressed && !p.down)) return;
@@ -143,7 +151,7 @@ export function step(self, world, dt, { stiffness, maxSpeed, whilePressed }) {
             jitter: { type: 'number', default: 24, min: 0, step: 2 },
         },
         params: { colors: { type: 'boolean', default: true } },
-        step: `
+        code: `
 const COLORS = ['#e8554e', '#f2a541', '#f4d35e', '#3fd1a4', '#4ea8de', '#9b6dde', '#e86fb0'];
 
 export function step(self, world, dt, { template, every, max, offset, jitter, colors }, state) {
@@ -158,6 +166,124 @@ export function step(self, world, dt, { template, every, max, offset, jitter, co
         y: self.y + offset.y,
         color: colors ? world.rng.pick(COLORS) : template.color,
     });
+}`,
+    }),
+
+    spec({
+        type: 'behavior/bumper',
+        title: 'Bumper',
+        description: 'kicks whatever hits it away (a pinball bumper)',
+        inputs: {
+            strength: { type: 'number', default: 500, min: 0, step: 50 },
+            cooldown: { type: 'number', default: 0.15, min: 0, step: 0.05 },
+        },
+        params: { tag: { type: 'string', default: '' } },
+        code: `
+export function enter(self, other, world, { strength, cooldown, tag }, state, hit) {
+    if (other.fixed || (tag && other.tag !== tag)) return;
+    // one kick per body per cooldown, so something resting on it isn't kicked every step
+    state.last ??= {};
+    if (world.time - (state.last[other.id] ?? -Infinity) < cooldown) return;
+    state.last[other.id] = world.time;
+    other.impulse(hit.normal.x * strength, hit.normal.y * strength);
+}`,
+    }),
+
+    spec({
+        type: 'behavior/booster',
+        title: 'Booster',
+        description: 'on a sensor: pushes whatever is inside it (a speed pad, a lift)',
+        inputs: { force: { type: 'vec2', default: { x: 1500, y: 0 } } },
+        params: {
+            local: { type: 'boolean', default: true },
+            tag: { type: 'string', default: '' },
+        },
+        code: `
+export function enter(self, other, world, { tag }, state) {
+    if (other.fixed || (tag && other.tag !== tag)) return;
+    (state.inside ??= new Map()).set(other.id, other);
+}
+
+export function exit(self, other, world, params, state) {
+    state.inside?.delete(other.id);
+}
+
+export function step(self, world, dt, { force, local }, state) {
+    if (!state.inside?.size) return;
+    let fx = force.x, fy = force.y;
+    if (local) {
+        // turn the push with the entity
+        const a = (self.angle * Math.PI) / 180, c = Math.cos(a), s = Math.sin(a);
+        [fx, fy] = [fx * c - fy * s, fx * s + fy * c];
+    }
+    for (const [id, b] of state.inside) {
+        if (!b.alive) state.inside.delete(id);
+        else b.accelerate(fx, fy);
+    }
+}`,
+    }),
+
+    spec({
+        type: 'behavior/teleport',
+        title: 'Teleport',
+        description: 'on a sensor: sends whatever enters to `to`, or to the `target` entity if one is wired in (respawns, portals)',
+        inputs: {
+            target: { type: 'entity', optional: true },
+            to: { type: 'vec2', default: { x: 0, y: 0 } },
+        },
+        params: {
+            keepVelocity: { type: 'boolean', default: false },
+            tag: { type: 'string', default: '' },
+        },
+        code: `
+export function enter(self, other, world, { target, to, keepVelocity, tag }) {
+    if (other.fixed || (tag && other.tag !== tag)) return;
+    // just arrived through another teleport: let it be (two portals would bounce it back and forth)
+    if (world.time - (other.teleportedAt ?? -Infinity) < 0.25) return;
+    const at = target ? world.get(target) ?? target : to;
+    other.teleportedAt = world.time;
+    other.moveTo(at.x, at.y);
+    if (!keepVelocity) other.setVelocity(0, 0);
+}`,
+    }),
+
+    spec({
+        type: 'behavior/remove-on-enter',
+        title: 'Remove on Enter',
+        description: 'on a sensor: removes whatever enters it (holes, goals, a drain)',
+        params: { tag: { type: 'string', default: '' } },
+        code: `
+export function enter(self, other, world, { tag }) {
+    if (other.fixed || (tag && other.tag !== tag)) return;
+    other.remove();
+}`,
+    }),
+
+    spec({
+        type: 'behavior/switch',
+        title: 'Switch',
+        description: 'on a sensor: when something enters, opens the `target` (switches it off) or drops it (makes it fall); hold: only while something is on it',
+        inputs: { target: 'entity' },
+        params: {
+            action: { type: 'enum', options: ['open', 'drop'], default: 'open' },
+            hold: { type: 'boolean', default: false },
+            tag: { type: 'string', default: '' },
+        },
+        code: `
+export function enter(self, other, world, { target, action, tag }, state) {
+    if (other.fixed || (tag && other.tag !== tag)) return;
+    state.on = (state.on ?? 0) + 1;
+    const t = world.get(target);
+    if (!t) return;
+    if (action === 'drop') t.setFixed(false);
+    else t.setEnabled(false);
+}
+
+export function exit(self, other, world, { target, action, hold, tag }, state) {
+    if (other.fixed || (tag && other.tag !== tag)) return;
+    state.on = Math.max(0, (state.on ?? 1) - 1);
+    // a pressure plate: close again once nothing is on it
+    if (hold && action === 'open' && state.on === 0) world.get(target)?.setEnabled(true);
 }`,
     }),
 

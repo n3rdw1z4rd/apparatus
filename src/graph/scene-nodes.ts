@@ -15,6 +15,8 @@ export interface BodyData {
     friction: number;
     bounce: number;
     density: number;
+    /** detects overlaps (for behaviours' enter / exit) but nothing collides with it */
+    sensor?: boolean;
 }
 
 export interface EntityData {
@@ -107,18 +109,19 @@ export const SCENE_NODES: NodeSpec[] = [
     {
         type: 'physics/body',
         title: 'Rigid Body',
-        description: 'makes an entity simulated when the viewport plays',
+        description: 'makes an entity simulated when the viewport plays (a sensor only detects what overlaps it: nothing collides with it)',
         inputs: { entity: 'entity' },
         params: {
             fixed: { type: 'boolean', default: false },
             friction: { type: 'number', default: PART_DEFAULTS.friction, min: 0, max: 2, step: 0.05 },
             bounce: { type: 'number', default: PART_DEFAULTS.bounce, min: 0, max: 1.2, step: 0.05 },
             density: { type: 'number', default: PART_DEFAULTS.density, min: 0.1, max: 20, step: 0.1 },
+            sensor: { type: 'boolean', default: false },
         },
         outputs: { entity: 'entity' },
-        run: ({ entity: e }, { fixed, friction, bounce, density }) => {
+        run: ({ entity: e }, { fixed, friction, bounce, density, sensor }) => {
             if (!isEntity(e)) throw new Error('needs an entity');
-            const body: BodyData = { fixed: !!fixed, friction: num(friction, 0.5), bounce: num(bounce, 0.1), density: Math.max(0.01, num(density, 1)) };
+            const body: BodyData = { fixed: !!fixed, friction: num(friction, 0.5), bounce: num(bounce, 0.1), density: Math.max(0.01, num(density, 1)), sensor: !!sensor };
             return { entity: { ...e, body } };
         },
     },

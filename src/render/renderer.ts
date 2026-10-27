@@ -160,12 +160,13 @@ export class Renderer {
         const color = this.world.getComponent<Look>(e, Look)?.color ?? '#cccccc';
         const fixed = !!this.world.getComponent<RigidBody>(e, RigidBody)?.fixed;
         const gen = !!this.world.getComponent<Meta>(e, Meta)?.gen;
-        const key = `${s.kind}|${s.w}|${s.h}|${s.r}|${color}`;
+        const sensor = !!this.world.getComponent<RigidBody>(e, RigidBody)?.sensor;
+        const key = `${s.kind}|${s.w}|${s.h}|${s.r}|${color}|${sensor}`;
 
         let v = this.visuals.get(e);
         if (!v || v.key !== key) {
             if (v) this.dropVisual(e);
-            v = this.buildVisual(s, color, key);
+            v = this.buildVisual(s, color, key, sensor);
             e.add(v.group);
             this.visuals.set(e, v);
         }
@@ -187,10 +188,11 @@ export class Renderer {
         }
     }
 
-    private buildVisual(s: Shape, color: string, key: string): Visual {
+    private buildVisual(s: Shape, color: string, key: string, sensor = false): Visual {
         const group = new Group();
         group.name = 'visual';
-        const fill = new MeshBasicMaterial({ color, side: DoubleSide });
+        // a sensor is a zone: see-through, so what's in it shows
+        const fill = new MeshBasicMaterial({ color, side: DoubleSide, transparent: sensor, opacity: sensor ? 0.28 : 1, depthWrite: !sensor });
         const top = LAYER / 4;
 
         let spoke: Mesh | null = null;
