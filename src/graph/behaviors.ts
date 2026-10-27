@@ -1,4 +1,4 @@
-import { behaviorRun, type NodeSpec } from '@n3rdw1z4rd/core/graph';
+import type { ModuleKind, NodeSpec, RunContext } from '@n3rdw1z4rd/core/graph';
 
 /* ------------------------------------------------------------------ */
 /* Behaviour nodes. A behaviour node is a module that exports hooks     */
@@ -7,6 +7,36 @@ import { behaviorRun, type NodeSpec } from '@n3rdw1z4rd/core/graph';
 /* the physics worker imports the same module and runs its hooks on     */
 /* that entity while the viewport plays.                                */
 /* ------------------------------------------------------------------ */
+
+/** The functions a behaviour module can export (any of them, and no `run`). */
+export const BEHAVIOR_HOOKS = ['setup', 'step', 'enter', 'exit'] as const;
+
+/** What a behaviour node evaluates to: the physics worker runs `source`'s hooks on a body, with `params`. */
+export interface BehaviorValue {
+    kind: 'behavior';
+    /** the behaviour node's type */
+    type: string;
+    /** the node instance (for error reports) */
+    node: string;
+    /** its inputs and params at evaluation time */
+    params: Record<string, unknown>;
+    /** the module with its hooks */
+    source: string;
+}
+
+/** A behaviour node's run: packs its inputs, params and source into a BehaviorValue. */
+export function behaviorRun(inputs: Record<string, unknown>, params: Record<string, unknown>, ctx: RunContext): { behavior: BehaviorValue } {
+    if (!ctx.source) throw new Error(`behaviour node ${ctx.type} has no source module`);
+    return { behavior: { kind: 'behavior', type: ctx.type, node: ctx.nodeId, params: { ...inputs, ...params }, source: ctx.source } };
+}
+
+/** Behaviour modules, for compileNodeScript: hooks instead of run (what ✎ saves and the scripts panel writes). */
+export const BEHAVIOR_KIND: ModuleKind = {
+    hooks: BEHAVIOR_HOOKS,
+    run: behaviorRun,
+    outputs: { behavior: 'behavior' },
+    category: 'behavior',
+};
 
 /** The API, at the top of every behaviour's code. */
 export const BEHAVIOR_API = `// A behaviour runs on the entity it's wired into (with Behave), every physics step while
