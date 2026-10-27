@@ -466,6 +466,60 @@ function marble(registry: NodeRegistry): GraphDoc {
     return b.g;
 }
 
+/* ── contacts and sensors ────────────────────────────────────────── */
+
+/**
+ * a marble down a ramp, through a bumper field, over a booster pad and a switch that opens a gate,
+ * into the goal — which sends it back to the start; the Camera follows it
+ */
+function maze(registry: NodeRegistry): GraphDoc {
+    const b = builder(registry);
+    const { add, link, body, output } = b;
+    const START = { x: -340, y: 310 };
+    const SENSOR = '#3fd1a4';
+
+    const marble = body(add('shape/ball', 0, 0, { at: START, radius: 11, color: '#e8554e' }), 250, 0, { bounce: 0.3, friction: 0.4, density: 2 });
+    const ramp = body(add('shape/box', 0, 230, { at: { x: -210, y: 250 }, size: { x: 380, y: 14 }, angle: -12, color: FIXED }), 250, 230, { fixed: true });
+
+    // a staggered field of bumpers under the end of the ramp
+    const field = add('list/grid2d', 0, 460, { cols: 3, rows: 2, spacing: { x: 90, y: 75 }, center: { x: 60, y: 120 }, stagger: true });
+    const bumperBall = add('shape/ball', 250, 460, { radius: 16, color: '#f4d35e' });
+    link(field, 'points', bumperBall, 'at');
+    const kick = add('behavior/bumper', 250, 690, { strength: 220 });
+    const bumpers = behaving(b, bumperBall, [kick], 500, 460, { fixed: true, bounce: 0.2 });
+
+    // a slight slope keeps the marble rolling toward the goal
+    const floor = body(add('shape/box', 0, 920, { at: { x: 50, y: -20 }, size: { x: 900, y: 14 }, angle: -3, color: FIXED }), 250, 920, { fixed: true });
+    const walls = add('list/grid2d', 0, 1150, { cols: 2, rows: 1, spacing: { x: 1040, y: 0 }, center: { x: 120, y: 120 } });
+    const wall = add('shape/box', 250, 1150, { size: { x: 14, y: 600 }, color: FIXED });
+    link(walls, 'points', wall, 'at');
+    const theWalls = body(wall, 500, 1150, { fixed: true });
+
+    // a booster pad on the floor (a sensor: the marble rolls through it)
+    const pad = add('shape/box', 750, 0, { at: { x: 110, y: 0 }, size: { x: 120, y: 26 }, color: SENSOR });
+    const boost = add('behavior/booster', 750, 230, { force: { x: 2600, y: 0 } });
+    const thePad = behaving(b, pad, [boost], 1000, 0, { fixed: true, sensor: true });
+
+    // a switch plate that opens the gate further on
+    const gate = body(add('shape/box', 750, 460, { at: { x: 430, y: 20 }, size: { x: 16, y: 120 }, color: '#9b6dde' }), 1000, 460, { fixed: true });
+    const plate = add('shape/box', 750, 690, { at: { x: 300, y: -12 }, size: { x: 60, y: 26 }, color: '#9b6dde' });
+    const open = add('behavior/switch', 750, 920, { action: 'open' });
+    link(gate, 'entity', open, 'target');
+    const thePlate = behaving(b, plate, [open], 1000, 690, { fixed: true, sensor: true });
+
+    // the goal: past the end of the floor; it sends the marble back to the start
+    const goal = add('shape/box', 750, 1150, { at: { x: 560, y: -110 }, size: { x: 140, y: 80 }, color: SENSOR });
+    const home = add('behavior/teleport', 750, 1380, { to: START });
+    const theGoal = behaving(b, goal, [home], 1000, 1150, { fixed: true, sensor: true });
+    const catcher = body(add('shape/box', 750, 1610, { at: { x: 560, y: -170 }, size: { x: 200, y: 14 }, color: FIXED }), 1000, 1610, { fixed: true });
+
+    const cam = add('scene/camera', 1300, 0, { view: 520, smooth: 0.35, deadzone: { x: 80, y: 60 } });
+    link(marble, 'entity', cam, 'follow');
+    const scene = output(1550, 500, [marble, ramp, bumpers, floor, theWalls, thePad, gate, thePlate, theGoal, catcher]);
+    link(cam, 'camera', scene, 'camera');
+    return b.g;
+}
+
 export const EXAMPLES: Example[] = [
     { id: 'sandbox', label: 'Sandbox', description: 'the original apparatus scene', make: sandbox },
     { id: 'plinko', label: 'Plinko', description: 'pegs from a staggered grid, balls to drop, an animated spinner', make: plinko },
@@ -479,6 +533,7 @@ export const EXAMPLES: Example[] = [
     { id: 'cradle', label: 'Cradle', description: 'joints: balls on ropes (a rough Newton’s cradle) and a box on a spring', make: cradle },
     { id: 'car', label: 'Car', description: 'joints: wheels anchored to a chassis with hinges; the back one has a motor', make: car },
     { id: 'marble', label: 'Marble run', description: 'camera: a Camera node follows a marble down a tower of ramps (pan to take over, double-click to hand back)', make: marble },
+    { id: 'maze', label: 'Marble maze', description: 'contacts and sensors: bumpers, a booster pad, a switch that opens a gate, a goal that sends the marble back to the start', make: maze },
     { id: 'magnet', label: 'Magnet', description: 'behaviours: drag the red ball while playing — it pulls the others in', make: magnet },
 ];
 

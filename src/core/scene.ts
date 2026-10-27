@@ -33,6 +33,8 @@ export interface PartDef {
     bounce?: number;
     /** kg/m² */
     density?: number;
+    /** detects overlaps (behaviours' enter / exit) but nothing collides with it */
+    sensor?: boolean;
     /** free-form label scripts can look parts up by */
     tag?: string;
     /** made by the script's build(); replaced the next time build runs */
@@ -99,6 +101,7 @@ export function normalizePart(raw: any): PartDef | null {
     if (raw.friction !== undefined) part.friction = num(raw.friction, PART_DEFAULTS.friction, 0, 10);
     if (raw.bounce !== undefined) part.bounce = num(raw.bounce, PART_DEFAULTS.bounce, 0, 2);
     if (raw.density !== undefined) part.density = num(raw.density, PART_DEFAULTS.density, 0.001, 1000);
+    if (raw.sensor) part.sensor = true;
     if (typeof raw.tag === 'string' && raw.tag) part.tag = raw.tag.slice(0, 40);
     if (raw.gen) part.gen = true;
 
@@ -139,6 +142,7 @@ function compactPart(p: PartDef): PartDef {
     if (p.friction !== undefined && p.friction !== PART_DEFAULTS.friction) out.friction = p.friction;
     if (p.bounce !== undefined && p.bounce !== PART_DEFAULTS.bounce) out.bounce = p.bounce;
     if (p.density !== undefined && p.density !== PART_DEFAULTS.density) out.density = p.density;
+    if (p.sensor) out.sensor = true;
     if (p.tag) out.tag = p.tag;
     if (p.gen) out.gen = true;
     return out;

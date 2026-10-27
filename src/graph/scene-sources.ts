@@ -65,21 +65,22 @@ export function run({ at, radius, color }, params, ctx) {
 `,
 
     'physics/body': `export const title = 'Rigid Body';
-export const description = 'makes an entity simulated when the viewport plays';
+export const description = 'makes an entity simulated when the viewport plays (a sensor only detects what overlaps it: nothing collides with it)';
 export const inputs = { entity: 'entity' };
 export const params = {
     fixed: { type: 'boolean', default: false },
     friction: { type: 'number', default: 0.5, min: 0, max: 2, step: 0.05 },
     bounce: { type: 'number', default: 0.1, min: 0, max: 1.2, step: 0.05 },
     density: { type: 'number', default: 1, min: 0.1, max: 20, step: 0.1 },
+    sensor: { type: 'boolean', default: false },
 };
 export const outputs = { entity: 'entity' };
 
 ${helpers}
 
-export function run({ entity }, { fixed, friction, bounce, density }) {
+export function run({ entity }, { fixed, friction, bounce, density, sensor }) {
     if (!isEntity(entity)) throw new Error('needs an entity');
-    const body = { fixed: !!fixed, friction: num(friction, 0.5), bounce: num(bounce, 0.1), density: Math.max(0.01, num(density, 1)) };
+    const body = { fixed: !!fixed, friction: num(friction, 0.5), bounce: num(bounce, 0.1), density: Math.max(0.01, num(density, 1)), sensor: !!sensor };
     return { entity: { ...entity, body } };
 }
 `,

@@ -107,7 +107,7 @@ export class Engine {
         this.ensurePhysics();
         this.bodyIds.clear();
         this.simulated.clear();
-        const bodies: { id: number; part: PartDef; behaviors?: BehaviorRef[] }[] = [];
+        const bodies: { id: number; key: string; part: PartDef; behaviors?: BehaviorRef[] }[] = [];
         let n = 1;
         for (const data of this.scene.entities) {
             const e = this.byId.get(data.id);
@@ -115,7 +115,7 @@ export class Engine {
             this.bodyIds.set(n, e);
             this.simulated.add(e);
             const behaviors = data.behaviors?.map(({ type, node, params, source }) => ({ type, node, params, source }));
-            bodies.push({ id: n++, part: toPart(data), ...(behaviors?.length ? { behaviors } : {}) });
+            bodies.push({ id: n++, key: data.id, part: toPart(data), ...(behaviors?.length ? { behaviors } : {}) });
         }
         const joints = this.jointInits(new Map([...this.bodyIds].map(([n, e]) => [e, n])));
         const g = this.scene.gravity;
@@ -348,6 +348,11 @@ export class Engine {
             if (this.spawned.delete(e)) this.world.remove(e);
             else e.visible = false; // a scene entity: comes back on stop
         }
+        // bodies behaviours switched off / on (a gate that opens): hidden while off
+        for (const [id, on] of f.toggled ?? []) {
+            const e = this.bodyIds.get(id);
+            if (e) e.visible = on;
+        }
         if (f.behaviorErrors?.length) this.onBehaviorError(f.behaviorErrors);
 
         const d = f.data;
@@ -527,7 +532,7 @@ export class Engine {
 function toPart(d: EntityData): PartDef {
     const part: PartDef = {
         shape: d.shape, x: d.x, y: -d.y, angle: -radians(d.angle), color: d.color,
-        fixed: d.body?.fixed, friction: d.body?.friction, bounce: d.body?.bounce, density: d.body?.density,
+        fixed: d.body?.fixed, friction: d.body?.friction, bounce: d.body?.bounce, density: d.body?.density, sensor: d.body?.sensor,
     };
     if (d.shape === 'box') {
         part.w = d.w;

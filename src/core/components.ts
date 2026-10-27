@@ -25,6 +25,8 @@ export class RigidBody {
     @field({ min: 0, max: 2, step: 0.05 }) friction: number = PART_DEFAULTS.friction;
     @field({ min: 0, max: 1.2, step: 0.05 }) bounce: number = PART_DEFAULTS.bounce;
     @field({ min: 0.1, max: 20, step: 0.1 }) density: number = PART_DEFAULTS.density;
+    /** detects overlaps but nothing collides with it */
+    @field() sensor = false;
 }
 
 @component('Look')
@@ -60,6 +62,7 @@ export function addPart(world: World, part: PartDef, opts: { spawned?: boolean }
         friction: part.friction ?? PART_DEFAULTS.friction,
         bounce: part.bounce ?? PART_DEFAULTS.bounce,
         density: part.density ?? PART_DEFAULTS.density,
+        sensor: !!part.sensor,
     });
     const index = world.query(Shape).length;
     world.addComponent(e, Look, { color: part.color ?? (part.fixed ? FIXED_COLOR : PALETTE[index % PALETTE.length]) });
@@ -81,7 +84,7 @@ export function partOf(world: World, e: ThreeEntity): PartDef | null {
         angle: -e.rotation.z,
         w: s.w, h: s.h, r: s.r,
         color: l?.color,
-        fixed: b.fixed, friction: b.friction, bounce: b.bounce, density: b.density,
+        fixed: b.fixed, friction: b.friction, bounce: b.bounce, density: b.density, sensor: b.sensor,
         tag: m?.tag || undefined,
         gen: m?.gen || undefined,
     });
