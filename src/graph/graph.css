@@ -488,3 +488,44 @@ textarea.gw-text { height: auto; width: 100%; padding: 4px 6px; resize: vertical
 .ggroup-rename { flex: 1; width: auto; height: 24px; font-weight: 400; }
 .ggroup-swatch { width: 18px; min-width: 18px; height: 18px; padding: 0; border: 1px solid rgba(255, 255, 255, 0.35); border-radius: 50%; }
 .ggroup-resize { pointer-events: auto; }
+
+/* ── subgraphs ─────────────────────────────────────────────────── */
+
+.gnode[data-state='none'] { border-color: #555; }
+.gnode-row.boundary .gnode-label { color: #9aa7ff; }
+.gnode-row.boundary .gnode-pin { box-shadow: 0 0 0 2px #0c0c0c, 0 0 0 3.5px #9aa7ff; }
+
+.graph-crumbs {
+    position: absolute;
+    top: 10px;
+    left: 10px;
+    z-index: 9;
+    display: flex;
+    align-items: center;
+    gap: 6px;
+    padding: 4px 10px 4px 4px;
+    border: 1px solid #9aa7ff;
+    border-radius: 6px;
+    background: var(--panel);
+    box-shadow: 0 6px 20px rgba(0, 0, 0, 0.5);
+}
+.crumb { height: var(--hit); padding: 0 8px; border: 0; border-radius: 4px; background: transparent; color: #9aa7ff; font: inherit; cursor: pointer; }
+.crumb:hover { background: #1f2235; }
+.crumb.current { color: var(--fg); font-weight: 600; cursor: text; }
+.crumb-sep { color: #555; }
+.crumb-note { color: #6a6a6a; margin-left: 6px; white-space: nowrap; }
+
+.graph-preview {
+    position: absolute;
+    right: 12px;
+    bottom: 12px;
+    z-index: 9;
+    width: min(360px, 40%);
+    height: 260px;
+    padding: 4px;
+    border: 1px solid var(--border);
+    border-radius: 6px;
+    background: var(--panel);
+    box-shadow: 0 6px 20px rgba(0, 0, 0, 0.5);
+}
+.graph-preview .viewport-host { height: 100% !important; }

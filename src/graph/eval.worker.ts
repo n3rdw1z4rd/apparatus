@@ -1,5 +1,5 @@
 /// <reference lib="webworker" />
-import { GraphEvaluator, compileNodeScript, createNodeRegistry, type GraphDoc, type NodeResult } from '@n3rdw1z4rd/core/graph';
+import { GraphEvaluator, compileNodeScript, createNodeRegistry, registerSubgraphs, type GraphDoc, type NodeResult } from '@n3rdw1z4rd/core/graph';
 import type { FromEvalWorker, NodeInterface, ToEvalWorker } from './eval-protocol';
 import { registerSceneNodes } from './scene-nodes';
 
@@ -24,6 +24,8 @@ self.onmessage = async (ev: MessageEvent<ToEvalWorker>) => {
     switch (msg.t) {
         case 'doc':
             doc = msg.doc;
+            // subgraph types are defined by the document (changed ones are re-registered)
+            registerSubgraphs(doc, registry);
             break;
 
         case 'eval': {

@@ -4,6 +4,7 @@ import { normalizePart, type PartDef } from '../core/scene';
 import type { BehaviorRef } from '../physics/protocol';
 import { PhysicsClient, type FrameInfo } from '../physics/physics-client';
 import { Renderer } from '../render/renderer';
+import { wheelIntent } from './wheel';
 import type { EntityData, SceneData } from './scene-nodes';
 
 /* ------------------------------------------------------------------ */
@@ -371,8 +372,14 @@ export class Engine {
         el.addEventListener('wheel', (ev) => {
             ev.preventDefault();
             ev.stopPropagation();
-            const p = local(ev.clientX, ev.clientY);
-            this.camera.zoomAt(p.x, p.y, Math.exp(-ev.deltaY * (ev.ctrlKey ? 0.01 : 0.0015)));
+            const w = wheelIntent(ev);
+            if (w.kind === 'pan') {
+                const k = scale();
+                this.camera.pan(-w.dx / k, -w.dy / k);
+            } else {
+                const p = local(ev.clientX, ev.clientY);
+                this.camera.zoomAt(p.x, p.y, w.factor);
+            }
         }, { passive: false });
         el.addEventListener('dblclick', (ev) => {
             ev.stopPropagation();

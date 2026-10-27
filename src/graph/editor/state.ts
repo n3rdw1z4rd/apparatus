@@ -1,6 +1,7 @@
 import { Signal } from '@n3rdw1z4rd/smoke-ui';
 import {
-    GraphEvaluator, createGraph, createNodeRegistry, normalizeGraph, type FrameInfo, type GraphDoc, type NodeResult,
+    GraphEvaluator, createGraph, createNodeRegistry, normalizeGraph, registerSubgraphs, type FrameInfo, type GraphDoc,
+    type NodeResult,
 } from '@n3rdw1z4rd/core/graph';
 import { EVAL_HANG_MS, GraphWorker } from '../eval-client';
 import type { NodeInterface } from '../eval-protocol';
@@ -23,7 +24,61 @@ registerSceneNodes(registry);
 /** used here only for `animated()` (which reads interfaces); evaluation happens in the worker */
 const interfaces = new GraphEvaluator(registry);
 
-export let doc: GraphDoc = createGraph();
+/** The whole document: what's evaluated, saved and undone. */
+let root: GraphDoc = createGraph();
+export const rootDoc = (): GraphDoc => root;
+
+/**
+ * The graph being edited: the document itself, or — inside a subgraph — that subgraph's
+ * inner graph (its definition object, edited in place). `editPath` is the way in.
+ */
+export let doc: GraphDoc = root;
+export const editPath = new Signal<string[]>([]);
+
+/** The graph at the end of `path` (null if a subgraph on the way is gone). */
+function resolve(path: string[]): GraphDoc | null {
+    let d: GraphDoc = root;
+    for (const type of path) {
+        const def = root.subgraphs?.[type];
+        if (!def) return null;
+        d = def as unknown as GraphDoc;
+    }
+    return d;
+}
+
+/** Goes into a subgraph type (from the current level). */
+export function enterSubgraph(type: string): void {
+    if (!root.subgraphs?.[type] || editPath.get().includes(type)) return;
+    const path = [...editPath.get(), type];
+    doc = resolve(path)!;
+    selection.set(new Set());
+    editPath.set(path);
+    bump(docEpoch);
+}
+
+/** Goes back out to `depth` (0: the top level). */
+export function exitSubgraph(depth = editPath.get().length - 1): void {
+    const path = editPath.get().slice(0, Math.max(0, depth));
+    doc = resolve(path) ?? root;
+    selection.set(new Set());
+    editPath.set(resolve(path) ? path : []);
+    bump(typesRevision); // the subgraph's node(s) out here may have new pins
+    bump(docEpoch);
+}
+
+/** Node types and subgraph definitions always live at the top level. */
+function hoist(): void {
+    if (doc === root) return;
+    const inner = doc as Partial<GraphDoc>;
+    if (inner.scripts) {
+        root.scripts = { ...(root.scripts ?? {}), ...inner.scripts };
+        delete inner.scripts;
+    }
+    if (inner.subgraphs) {
+        root.subgraphs = { ...(root.subgraphs ?? {}), ...inner.subgraphs };
+        delete inner.subgraphs;
+    }
+}
 
 /** bumped on every change to the document (structure, values, positions) */
 export const docRevision = new Signal(0);
@@ -61,13 +116,16 @@ const MERGING = /^(move|value:|resize:)/;
 export function edit(label: string, change: (doc: GraphDoc) => void): void {
     const now = performance.now();
     if (!MERGING.test(label) || label !== lastLabel || now - lastAt > 1000) {
-        undoStack.push(JSON.stringify(doc));
+        undoStack.push(JSON.stringify(root));
         if (undoStack.length > 200) undoStack.shift();
         redoStack.length = 0;
     }
     lastLabel = label;
     lastAt = now;
     change(doc);
+    hoist();
+    // edits inside a subgraph change its type: every instance follows
+    registerSubgraphs(root, registry);
     changed();
 }
 
@@ -75,16 +133,16 @@ export function undo(): void {
     const prev = undoStack.pop();
     if (!prev) return;
     status.set('');
-    redoStack.push(JSON.stringify(doc));
-    replace(JSON.parse(prev), false);
+    redoStack.push(JSON.stringify(root));
+    replace(JSON.parse(prev), false, true);
 }
 
 export function redo(): void {
     const next = redoStack.pop();
     if (!next) return;
     status.set('');
-    undoStack.push(JSON.stringify(doc));
-    replace(JSON.parse(next), false);
+    undoStack.push(JSON.stringify(root));
+    replace(JSON.parse(next), false, true);
 }
 
 /**
@@ -92,7 +150,7 @@ export function redo(): void {
  * you had.
  */
 export function openDocument(next: GraphDoc, trusted: boolean): void {
-    undoStack.push(JSON.stringify(doc));
+    undoStack.push(JSON.stringify(root));
     if (undoStack.length > 200) undoStack.shift();
     redoStack.length = 0;
     scriptsTrusted.set(trusted || !Object.keys(next.scripts ?? {}).length);
@@ -107,9 +165,13 @@ export function loadExample(id: string): void {
     status.set(`example: ${ex.label} — ${ex.description} (undo to go back)`);
 }
 
-/** Swaps in another document (load, import, undo). */
-export function replace(next: GraphDoc, resetHistory = true): void {
-    doc = normalizeGraph(next);
+/** Swaps in another document (load, import, undo). `keepPath` stays inside the same subgraph if it still exists. */
+export function replace(next: GraphDoc, resetHistory = true, keepPath = false): void {
+    root = normalizeGraph(next);
+    registerSubgraphs(root, registry);
+    const path = keepPath && resolve(editPath.get()) ? editPath.get() : [];
+    doc = resolve(path) ?? root;
+    if (path.length !== editPath.get().length) editPath.set(path);
     if (resetHistory) {
         undoStack.length = 0;
         redoStack.length = 0;
@@ -166,7 +228,7 @@ export function evaluateFrame(f: FrameInfo): Promise<void> {
 
 /** Whether any output depends on an animated node. */
 export function isAnimated(): boolean {
-    return interfaces.animated(doc).length > 0;
+    return interfaces.animated(root).length > 0;
 }
 
 async function evaluate(): Promise<void> {
@@ -177,7 +239,7 @@ async function evaluate(): Promise<void> {
     running = true;
     try {
         await worker.ready;
-        const reply = await worker.evaluate(doc, docRevision.get(), frame);
+        const reply = await worker.evaluate(root, docRevision.get(), frame);
         const keep = new Set(reply.order);
         const next = new Map<string, NodeResult>();
         for (const [id, r] of results.get()) if (keep.has(id)) next.set(id, r);
@@ -225,7 +287,7 @@ function registerInterface(spec: NodeInterface): void {
 export async function compileScripts(): Promise<void> {
     if (!scriptsTrusted.get() || scriptsSuspended.get()) return;
     const w = worker;
-    for (const [type, source] of Object.entries(doc.scripts ?? {})) {
+    for (const [type, source] of Object.entries(root.scripts ?? {})) {
         if (workerScripts.get(type) === source && registry.get(type)?.source === source) continue;
         try {
             registerInterface(await w.compile(type, source));
@@ -244,8 +306,8 @@ export async function compileScripts(): Promise<void> {
  */
 export async function saveScript(type: string, source: string): Promise<'compiled' | 'saved'> {
     if (scriptsSuspended.get()) {
-        edit(`script:${type}`, (d) => {
-            d.scripts = { ...(d.scripts ?? {}), [type]: source };
+        edit(`script:${type}`, () => {
+            root.scripts = { ...(root.scripts ?? {}), [type]: source };
         });
         return 'saved';
     }
@@ -253,7 +315,8 @@ export async function saveScript(type: string, source: string): Promise<'compile
     workerScripts.set(type, source);
     registerInterface(spec);
     edit(`script:${type}`, (d) => {
-        d.scripts = { ...(d.scripts ?? {}), [type]: source };
+        void d;
+        root.scripts = { ...(root.scripts ?? {}), [type]: source };
     });
     bump(typesRevision);
     return 'compiled';
@@ -261,13 +324,13 @@ export async function saveScript(type: string, source: string): Promise<'compile
 
 /** Whether a type is one of this graph's script node types (vs a built-in). */
 export function isScriptType(type: string): boolean {
-    return !!doc.scripts?.[type];
+    return !!root.scripts?.[type];
 }
 
 /** A free type name based on `base` (`custom/box`, `custom/box-2`, …). */
 export function freeTypeName(base: string): string {
     let name = base;
-    for (let k = 2; registry.get(name) || doc.scripts?.[name]; k++) name = `${base}-${k}`;
+    for (let k = 2; registry.get(name) || root.scripts?.[name]; k++) name = `${base}-${k}`;
     return name;
 }
 
@@ -286,7 +349,7 @@ export async function forkNodes(nodeIds: string[], type: string, source: string)
     const outs = new Set(def.outputs.map((p) => p.name));
     const ids = new Set(nodeIds);
     edit(`fork:${type}`, (d) => {
-        d.scripts = { ...(d.scripts ?? {}), [type]: source };
+        root.scripts = { ...(root.scripts ?? {}), [type]: source };
         for (const n of d.nodes) if (ids.has(n.id)) n.type = type;
         d.links = d.links.filter((l) => !(ids.has(l.to.node) && !ins.has(l.to.port)) && !(ids.has(l.from.node) && !outs.has(l.from.port)));
     });
@@ -302,7 +365,7 @@ function scheduleSave(): void {
     clearTimeout(saveTimer);
     saveTimer = window.setTimeout(() => {
         try {
-            localStorage.setItem(SAVE_KEY, JSON.stringify(doc));
+            localStorage.setItem(SAVE_KEY, JSON.stringify(root));
         } catch { /* storage unavailable: nothing to do */ }
     }, 400);
 }
@@ -327,7 +390,7 @@ export async function importGraph(file: File): Promise<void> {
 }
 
 export function exportGraph(): void {
-    const blob = new Blob([JSON.stringify(doc, null, 2)], { type: 'application/json' });
+    const blob = new Blob([JSON.stringify(root, null, 2)], { type: 'application/json' });
     const a = document.createElement('a');
     a.href = URL.createObjectURL(blob);
     a.download = 'graph.apparatus.json';

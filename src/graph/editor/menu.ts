@@ -14,9 +14,10 @@ export function closeNodeMenu(): void {
     open = null;
 }
 
-export function openNodeMenu(container: HTMLElement, cx: number, cy: number, pick: (def: NodeDef) => void, opts: { fromType?: string } = {}): void {
+export function openNodeMenu(container: HTMLElement, cx: number, cy: number, pick: (def: NodeDef) => void, opts: { fromType?: string; exclude?: (def: NodeDef) => boolean } = {}): void {
     closeNodeMenu();
     const all = registry.all()
+        .filter((d) => !opts.exclude?.(d))
         .filter((d) => !opts.fromType || d.inputs.some((p) => portTypes.canConnect(opts.fromType!, p.type)))
         .sort((a, b) => a.category.localeCompare(b.category) || a.title.localeCompare(b.title));
 

@@ -1,4 +1,4 @@
-import { graphId, type GraphDoc, type GraphGroup, type GraphLink, type GraphNode } from '@n3rdw1z4rd/core/graph';
+import { graphId, type GraphDoc, type GraphGroup, type GraphLink, type GraphNode, type SubgraphDef } from '@n3rdw1z4rd/core/graph';
 
 /* ------------------------------------------------------------------ */
 /* Copy / paste of nodes as JSON (works across tabs: it's on the        */
@@ -14,20 +14,39 @@ export interface Clip {
     nodes: GraphNode[];
     links: GraphLink[];
     scripts?: Record<string, string>;
+    subgraphs?: Record<string, SubgraphDef>;
     groups?: GraphGroup[];
 }
 
-/** The part of `doc` made of `ids` (deep copies). `inside(group)` lists a group's node ids. */
-export function makeClip(doc: GraphDoc, ids: Set<string>, inside: (g: GraphGroup) => string[]): Clip {
+/**
+ * The part of `doc` made of `ids` (deep copies). `inside(group)` lists a group's node ids;
+ * `top` is where script types and subgraph definitions live (the top-level document).
+ */
+export function makeClip(doc: GraphDoc, ids: Set<string>, inside: (g: GraphGroup) => string[], top: GraphDoc = doc): Clip {
     const nodes = doc.nodes.filter((n) => ids.has(n.id)).map((n) => structuredClone(n));
     const links = doc.links.filter((l) => ids.has(l.from.node) && ids.has(l.to.node)).map((l) => structuredClone(l));
+    // the types the nodes use — subgraphs, and what's inside them, all the way down
     const scripts: Record<string, string> = {};
-    for (const n of nodes) if (doc.scripts?.[n.type]) scripts[n.type] = doc.scripts[n.type];
+    const subgraphs: Record<string, SubgraphDef> = {};
+    const visit = (type: string) => {
+        if (top.scripts?.[type]) scripts[type] = top.scripts[type];
+        const sub = top.subgraphs?.[type];
+        if (sub && !subgraphs[type]) {
+            subgraphs[type] = structuredClone(sub);
+            for (const n of sub.nodes) visit(n.type);
+        }
+    };
+    for (const n of nodes) visit(n.type);
     const groups = (doc.groups ?? []).filter((g) => {
         const members = inside(g);
         return members.length > 0 && members.every((id) => ids.has(id));
     }).map((g) => structuredClone(g));
-    return { format: CLIP_FORMAT, nodes, links, ...(Object.keys(scripts).length ? { scripts } : {}), ...(groups.length ? { groups } : {}) };
+    return {
+        format: CLIP_FORMAT, nodes, links,
+        ...(Object.keys(scripts).length ? { scripts } : {}),
+        ...(Object.keys(subgraphs).length ? { subgraphs } : {}),
+        ...(groups.length ? { groups } : {}),
+    };
 }
 
 export function parseClip(text: string): Clip | null {
@@ -71,6 +90,10 @@ export function pasteClip(doc: GraphDoc, clip: Clip, at: [number, number]): stri
     for (const [type, source] of Object.entries(clip.scripts ?? {})) {
         doc.scripts ??= {};
         doc.scripts[type] ??= source;
+    }
+    for (const [type, def] of Object.entries(clip.subgraphs ?? {})) {
+        doc.subgraphs ??= {};
+        doc.subgraphs[type] ??= structuredClone(def);
     }
     for (const g of clip.groups ?? []) {
         doc.groups = [...(doc.groups ?? []), { ...structuredClone(g), id: graphId('g'), rect: [g.rect[0] + dx, g.rect[1] + dy, g.rect[2], g.rect[3]] }];

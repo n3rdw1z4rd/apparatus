@@ -108,7 +108,7 @@ document.getElementById('root')!.append(
         <TrustBanner />
         <SuspendedBanner />
         {canvas.el}
-        <div className="graph-help"><span className="legend ok">ok</span> <span className="legend error">error</span> <span className="legend slow">slow</span> <span className="legend skipped">skipped</span> · drag empty space to pan · shift-drag to select · wheel or pinch to zoom · drag from a pin to wire · double-click or right-click to add a node</div>
+        <div className="graph-help"><span className="legend ok">ok</span> <span className="legend error">error</span> <span className="legend slow">slow</span> <span className="legend skipped">skipped</span> · drag empty space to pan · shift-drag to select · scroll to pan · pinch or ⌘-scroll to zoom · drag from a pin to wire · double-click or right-click to add a node</div>
     </div> as HTMLElement,
 );
 

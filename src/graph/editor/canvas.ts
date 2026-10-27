@@ -1,15 +1,16 @@
 import {
-    addNode, canConnect, connect, disconnect, getNode, graphId, linksInto, portTypes, removeNode,
-    type GraphGroup, type GraphNode, type NodeDef, type PortRef,
+    addNode, canConnect, collapseToSubgraph, connect, disconnect, expandSubgraph, getNode, graphId, linksInto, portTypes,
+    removeNode, type GraphGroup, type GraphNode, type NodeDef, type PortRef, type SubgraphDef,
 } from '@n3rdw1z4rd/core/graph';
 import { makeClip, parseClip, pasteClip, type Clip } from './clipboard';
+import { wheelIntent } from '../wheel';
 import { Engine } from '../engine';
 import type { SceneData } from '../scene-nodes';
 import { h, svg } from './dom';
 import { openNodeMenu } from './menu';
 import { openScriptPanel } from './script-panel';
 import {
-    adjustLayout, doc, docEpoch, docRevision, edit, evaluateFrame, runtimeErrors, status, isAnimated, isScriptType, redo, registry, results, scriptsSuspended,
+    adjustLayout, doc, docEpoch, docRevision, edit, editPath, enterSubgraph, evaluateFrame, exitSubgraph, rootDoc, runtimeErrors, status, isAnimated, isScriptType, redo, registry, results, scriptsSuspended,
     scriptsTrusted, selection, typesRevision, undo,
 } from './state';
 import { hasWidget, preview, widget } from './widgets';
@@ -29,18 +30,20 @@ export const SLOW_MS = 8;
 export const SLOW_ANIMATED_MS = 4;
 
 /** A node's state, shown by its border color. */
-export type NodeState = 'ok' | 'error' | 'slow' | 'skipped';
+export type NodeState = 'ok' | 'error' | 'slow' | 'skipped' | 'none';
 
 const STATE_TEXT: Record<NodeState, string> = {
     ok: 'ran fine',
     error: 'error',
     slow: 'slow — a likely bottleneck',
     skipped: 'skipped',
+    none: 'inside a subgraph: its results show on the subgraph node',
 };
 
 const CATEGORY_COLORS: Record<string, string> = {
     value: '#3fd1a4', math: '#4ea8de', vec2: '#4ea8de', list: '#9b6dde', shape: '#f2a541',
     physics: '#e8554e', scene: '#f4d35e', output: '#e86fb0', scripts: '#d3d3d3', behavior: '#ff7f9f', custom: '#d3d3d3',
+    subgraph: '#9aa7ff',
 };
 
 interface NodeView {
@@ -89,6 +92,11 @@ export class GraphCanvas {
     /** what was copied last (a fallback when the system clipboard isn't available) */
     private clip: Clip | null = null;
     private longPress = 0;
+    private readonly crumbs: HTMLElement;
+    /** while inside a subgraph: the top-level viewports keep running here */
+    private readonly preview: HTMLElement;
+    /** the view (pan / zoom) at each level, so going in and out keeps your place */
+    private readonly levelViews = new Map<string, { x: number; y: number; zoom: number }>();
     /** nodes change size as fonts load and widgets settle: their pins move, so the wires follow */
     private readonly nodeSizes = new ResizeObserver(() => this.drawWires());
 
@@ -96,11 +104,27 @@ export class GraphCanvas {
         this.wires = svg('svg', { class: 'graph-wires' });
         this.layer = h('div', { className: 'graph-layer' }, this.wires as unknown as Node);
         this.selbar = h('div', { className: 'graph-selbar', hidden: true });
-        this.el = h('div', { className: 'graph', tabIndex: 0 }, this.layer, this.selbar);
+        this.crumbs = h('nav', { className: 'graph-crumbs', hidden: true });
+        this.preview = h('div', { className: 'graph-preview', hidden: true });
+        this.el = h('div', { className: 'graph', tabIndex: 0 }, this.layer, this.selbar, this.crumbs, this.preview);
 
         this.attachInput();
         docRevision.subscribe(() => this.render());
         docEpoch.subscribe(() => this.render(true));
+        let level = '';
+        editPath.subscribe((path) => {
+            // keep a view per level; a level visited for the first time is framed
+            this.levelViews.set(level, { ...this.view });
+            level = path.join('/');
+            const saved = this.levelViews.get(level);
+            if (saved) {
+                this.view = { ...saved };
+                this.applyView();
+            } else {
+                requestAnimationFrame(() => requestAnimationFrame(() => this.fit()));
+            }
+            this.showCrumbs();
+        });
         typesRevision.subscribe(() => this.render(true));
         results.subscribe(() => this.showResults());
         scriptsSuspended.subscribe(() => this.showResults());
@@ -176,12 +200,20 @@ export class GraphCanvas {
             this.nodeSizes.unobserve(v.el);
             v.el.remove();
             this.views.delete(id);
-            const vp = this.viewports.get(id);
-            if (vp) {
+        }
+        // viewports: gone for good when their node is; while you're inside a subgraph, the
+        // top level's keep running in a floating preview
+        const inside = editPath.get().length > 0;
+        for (const [id, vp] of this.viewports) {
+            if (alive.has(id)) continue;
+            if (!getNode(rootDoc(), id)) {
                 vp.engine.dispose();
                 this.viewports.delete(id);
+            } else if (inside && vp.host.parentElement !== this.preview) {
+                this.preview.append(vp.host);
             }
         }
+        this.preview.hidden = !inside || !this.preview.childElementCount;
 
         for (const node of doc.nodes) {
             const def = registry.get(node.type);
@@ -374,6 +406,7 @@ export class GraphCanvas {
         this.selbar.replaceChildren(
             h('span', { className: 'graph-selbar-count' }, label),
             h('button', { className: 'btn', title: 'frame them in a group (⌘/ctrl+g)', onclick: () => this.groupSelection() }, 'group'),
+            h('button', { className: 'btn', title: 'collapse them into one reusable node (a subgraph)', onclick: () => this.collapseSelection() }, 'subgraph'),
             h('button', { className: 'btn', title: 'duplicate (⌘/ctrl+d)', onclick: () => this.duplicateSelection() }, 'duplicate'),
             h('button', { className: 'btn', title: 'copy (⌘/ctrl+c)', onclick: () => this.copySelection() }, 'copy'),
             h('button', { className: 'btn', title: 'enable / disable (m)', onclick: () => this.toggleDisabled([...selection.get()]) }, 'disable'),
@@ -383,7 +416,7 @@ export class GraphCanvas {
     /** The selection as a clip (or null if nothing is selected). */
     private selectionClip(): Clip | null {
         const ids = new Set([...selection.get()].filter((id) => getNode(doc, id)));
-        return ids.size ? makeClip(doc, ids, (g) => this.groupMembers(g)) : null;
+        return ids.size ? makeClip(doc, ids, (g) => this.groupMembers(g), rootDoc()) : null;
     }
 
     copySelection(): void {
@@ -417,6 +450,12 @@ export class GraphCanvas {
         const head = h('header', { className: 'gnode-head', style: { '--cat': color } as any },
             h('span', { className: 'gnode-title', title: def ? `${def.type}${def.description ? ` — ${def.description}` : ''}` : node.type },
                 node.title ?? def?.title ?? node.type),
+            this.subgraphDef(node.type)
+                ? h('button', { className: 'gnode-btn', title: 'go inside (double-click the header)', onclick: () => enterSubgraph(node.type) }, '⤵')
+                : null,
+            this.subgraphDef(node.type)
+                ? h('button', { className: 'gnode-btn', title: 'expand: put its nodes back here', onclick: () => this.expand(node.id) }, '⇲')
+                : null,
             def?.source && def.type !== 'output/viewport'
                 ? h('button', {
                     className: 'gnode-btn',
@@ -438,25 +477,45 @@ export class GraphCanvas {
                 onclick: () => this.toggleDisabled([node.id]),
             }, '⏻'),
             h('button', { className: 'gnode-btn', title: 'delete (del)', onclick: () => this.deleteNodes([node.id]) }, '×'));
-        head.addEventListener('pointerdown', (e) => this.startNodeDrag(e, node.id));
+        let lastDown = 0;
+        head.addEventListener('pointerdown', (e) => {
+            // a double-click on a subgraph's header goes inside (the drag captures the pointer,
+            // so the second press is spotted here)
+            const now = performance.now();
+            if (this.subgraphDef(node.type) && now - lastDown < 350 && !(e.target as HTMLElement).closest('button')) {
+                e.stopPropagation();
+                lastDown = 0;
+                enterSubgraph(node.type);
+                return;
+            }
+            lastDown = now;
+            this.startNodeDrag(e, node.id);
+        });
 
         const body = h('div', { className: 'gnode-body' });
         if (!def) {
             body.append(h('div', { className: 'gnode-row muted' }, `unknown type ${node.type}`));
         } else {
+            // inside a subgraph: which pins are its inputs and outputs
+            const sub = this.currentSubgraph();
             for (const p of def.outputs) {
                 const pin = this.pin('out', node.id, p.name, p.type);
                 pins.set(`out:${p.name}`, pin);
-                body.append(h('div', { className: 'gnode-row out' }, h('span', { className: 'gnode-label' }, p.name), pin));
+                const out = sub?.outputs.find((o) => o.from.node === node.id && o.from.port === p.name);
+                body.append(h('div', { className: out ? 'gnode-row out boundary' : 'gnode-row out' },
+                    h('span', { className: 'gnode-label', title: out ? `the subgraph’s output “${out.name}”` : '' }, out ? `${p.name} ⇢ ${out.name}` : p.name), pin));
             }
             for (const p of def.inputs) {
                 const pin = this.pin('in', node.id, p.name, p.type, p.multi);
                 pins.set(`in:${p.name}`, pin);
+                const ext = sub?.inputs.find((i) => i.to.some((t) => t.node === node.id && t.port === p.name));
                 const linked = linksInto(doc, node.id, p.name).length > 0;
-                const w = !linked && hasWidget(p.type, p)
+                const w = !linked && !ext && hasWidget(p.type, p)
                     ? widget(p.type, p, node.values[p.name] ?? p.default, (v) => this.setValue(node.id, p.name, v))
                     : null;
-                body.append(h('div', { className: 'gnode-row in' }, pin, h('span', { className: 'gnode-label', title: p.description ?? '' }, p.label ?? p.name), w));
+                body.append(h('div', { className: ext ? 'gnode-row in boundary' : 'gnode-row in' }, pin,
+                    h('span', { className: 'gnode-label', title: ext ? `fed by the subgraph’s input “${ext.name}”` : p.description ?? '' },
+                        ext ? `${ext.name} ⇢ ${p.label ?? p.name}` : p.label ?? p.name), w));
             }
             for (const p of def.params) {
                 const w = widget(p.type, p, node.values[p.name] ?? p.default, (v) => this.setValue(node.id, p.name, v));
@@ -520,6 +579,9 @@ export class GraphCanvas {
             if (node?.disabled) {
                 state = 'skipped';
                 text = 'disabled';
+            } else if (!r && editPath.get().length) {
+                state = 'none'; // inside a subgraph: results show on the subgraph node
+                text = '';
             } else if (!r) {
                 state = 'skipped';
                 text = def?.output ? '' : 'skipped — nothing it feeds is shown';
@@ -563,7 +625,7 @@ export class GraphCanvas {
         }
         // viewports show whatever their scene input evaluated to
         for (const [id, vp] of this.viewports) {
-            const link = getNode(doc, id)?.disabled ? undefined : linksInto(doc, id, 'scene')[0];
+            const link = getNode(rootDoc(), id)?.disabled ? undefined : linksInto(rootDoc(), id, 'scene')[0];
             const src = link && res.get(link.from.node);
             const scene = src && !src.error && !src.blocked ? (src.outputs[link.from.port] as SceneData) : null;
             vp.engine.setScene(scene?.kind === 'scene2d' ? scene : null);
@@ -674,7 +736,7 @@ export class GraphCanvas {
                 if (input) connect(d, registry, from, { node: n.id, port: input.name });
                 selection.set(new Set([n.id]));
             });
-        }, { fromType: registry.get(getNode(doc, from.node)!.type)?.outputs.find((p) => p.name === from.port)?.type });
+        }, { fromType: registry.get(getNode(doc, from.node)!.type)?.outputs.find((p) => p.name === from.port)?.type, exclude: this.menuExclude });
     }
 
     /* ── nodes ─────────────────────────────────────────────────── */
@@ -785,6 +847,101 @@ export class GraphCanvas {
         if (moved) adjustLayout();
     }
 
+    /* ── subgraphs ─────────────────────────────────────────────── */
+
+    private subgraphDef(type: string): SubgraphDef | undefined {
+        return rootDoc().subgraphs?.[type];
+    }
+
+    /** The subgraph being edited (null at the top level). */
+    private currentSubgraph(): SubgraphDef | null {
+        const path = editPath.get();
+        return path.length ? this.subgraphDef(path[path.length - 1]) ?? null : null;
+    }
+
+    /** Whether `type` is, or contains (all the way down), a subgraph we're inside of. */
+    private wouldNest(type: string): boolean {
+        const path = new Set(editPath.get());
+        const seen = new Set<string>();
+        const visit = (t: string): boolean => {
+            if (path.has(t)) return true;
+            const def = this.subgraphDef(t);
+            if (!def || seen.has(t)) return false;
+            seen.add(t);
+            return def.nodes.some((n) => visit(n.type));
+        };
+        return visit(type);
+    }
+
+    /** What the node menu leaves out here. */
+    private menuExclude = (def: NodeDef): boolean =>
+        editPath.get().length > 0 && (def.output || this.wouldNest(def.type));
+
+    collapseSelection(): void {
+        const ids = [...selection.get()].filter((id) => getNode(doc, id));
+        if (!ids.length) return;
+        let made: GraphNode | null = null;
+        try {
+            edit('subgraph', (d) => {
+                made = collapseToSubgraph(d, registry, ids, 'Subgraph').node;
+            });
+        } catch (err) {
+            this.flash((err as Error).message);
+            return;
+        }
+        if (made) selection.set(new Set([(made as GraphNode).id]));
+    }
+
+    expand(nodeId: string): void {
+        let ids: string[] = [];
+        edit('expand', (d) => {
+            ids = expandSubgraph(d, nodeId, rootDoc().subgraphs);
+        });
+        selection.set(new Set(ids));
+    }
+
+    private showCrumbs(): void {
+        const path = editPath.get();
+        this.crumbs.hidden = !path.length;
+        if (!path.length) return;
+        const items: (HTMLElement | string)[] = [h('button', { className: 'crumb', title: 'back to the top level', onclick: () => exitSubgraph(0) }, 'graph')];
+        path.forEach((type, i) => {
+            items.push(h('span', { className: 'crumb-sep' }, '›'));
+            const def = this.subgraphDef(type);
+            const last = i === path.length - 1;
+            const b = h('button', {
+                className: last ? 'crumb current' : 'crumb',
+                title: last ? `${type} — double-click to rename · esc goes back out` : `back to ${def?.title ?? type}`,
+                onclick: () => !last && exitSubgraph(i + 1),
+            }, def?.title ?? type);
+            if (last) {
+                b.addEventListener('dblclick', () => {
+                    const input = h('input', { className: 'gw-text', value: def?.title ?? '' });
+                    b.replaceWith(input);
+                    input.focus();
+                    input.select();
+                    let done = false;
+                    const commit = (save: boolean) => {
+                        if (done) return;
+                        done = true;
+                        const v = input.value.trim().slice(0, 60);
+                        if (save && v && def && v !== def.title) edit('rename subgraph', () => { rootDoc().subgraphs![type].title = v; });
+                        this.showCrumbs();
+                    };
+                    input.addEventListener('keydown', (ev) => {
+                        ev.stopPropagation();
+                        if (ev.key === 'Enter') commit(true);
+                        if (ev.key === 'Escape') commit(false);
+                    });
+                    input.addEventListener('blur', () => commit(true));
+                });
+            }
+            items.push(b);
+        });
+        items.push(h('span', { className: 'crumb-note' }, 'editing a subgraph: every node of this type follows'));
+        this.crumbs.replaceChildren(...items);
+    }
+
     /** Opens the add-node menu at a client point. */
     addNodeAt(cx: number, cy: number): void {
         const at = this.toGraph(cx, cy);
@@ -794,7 +951,7 @@ export class GraphCanvas {
                 if (def.type === 'output/viewport') n.size = [420, 320];
                 selection.set(new Set([n.id]));
             });
-        });
+        }, { exclude: this.menuExclude });
     }
 
     /* ── viewport nodes ────────────────────────────────────────── */
@@ -1064,15 +1221,14 @@ export class GraphCanvas {
         el.addEventListener('wheel', (e) => {
             if ((e.target as HTMLElement).closest('.viewport-host, textarea, select')) return;
             e.preventDefault();
-            const scale = e.deltaMode === 1 ? 16 : e.deltaMode === 2 ? 400 : 1;
-            // trackpad two-finger scroll pans; pinch (ctrlKey) and mouse wheels zoom
-            if (!e.ctrlKey && e.deltaX !== 0) {
-                this.view.x -= e.deltaX * scale;
-                this.view.y -= e.deltaY * scale;
+            const w = wheelIntent(e);
+            if (w.kind === 'pan') {
+                this.view.x -= w.dx;
+                this.view.y -= w.dy;
                 this.applyView();
-                return;
+            } else {
+                this.zoomAt(e.clientX, e.clientY, w.factor);
             }
-            this.zoomAt(e.clientX, e.clientY, Math.exp(-e.deltaY * scale * (e.ctrlKey ? 0.01 : 0.0015)));
         }, { passive: false });
 
         el.addEventListener('dblclick', (e) => {
@@ -1104,7 +1260,8 @@ export class GraphCanvas {
                 e.preventDefault();
                 selection.set(new Set(doc.nodes.map((n) => n.id)));
             } else if (e.key === 'Escape') {
-                selection.set(new Set());
+                if (!selection.get().size && editPath.get().length) exitSubgraph();
+                else selection.set(new Set());
             } else if (e.key === 'Delete' || e.key === 'Backspace') {
                 if (this.selectedLink) {
                     const id = this.selectedLink;
