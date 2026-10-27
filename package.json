@@ -17,7 +17,7 @@
         "@n3rdw1z4rd/core": "^0.23.0",
         "@n3rdw1z4rd/smoke-ui": "^0.2.0",
         "@n3rdw1z4rd/smoke-ui-components": "^0.1.1",
-        "@n3rdw1z4rd/smoke-ui-node-graph": "^0.1.0",
+        "@n3rdw1z4rd/smoke-ui-node-graph": "^0.1.2",
         "codemirror": "^6.0.2",
         "three": "^0.186.1"
     },
