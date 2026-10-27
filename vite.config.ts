@@ -11,7 +11,7 @@ export default defineConfig({
         wasm(),
     ],
     resolve: {
-        // core is linked from ../core (file:), which has its own three in node_modules:
+        // core may be linked from ../core (npm link), which has its own three in node_modules:
         // one copy only, or instanceof checks and three's "multiple instances" warning bite
         dedupe: ['three'],
     },
@@ -23,8 +23,8 @@ export default defineConfig({
         target: 'es2022',
         chunkSizeWarningLimit: 2000,
         rollupOptions: {
-            // two pages: the scene editor and the node graph
-            input: { main: 'index.html', graph: 'graph.html' },
+            // two pages: the node graph editor, and the original scene editor (legacy)
+            input: { main: 'index.html', legacy: 'legacy.html' },
         },
     },
     server: {
