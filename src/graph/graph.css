@@ -45,6 +45,9 @@ html, body, #root {
     width: 100%;
     height: 100dvh;
 }
+/* no text selection in the editor (a stray drag would select the whole page), except where you type */
+.graph-app { -webkit-user-select: none; user-select: none; }
+.graph-app :is(input, textarea, [contenteditable], .cm-editor) { -webkit-user-select: text; user-select: text; }
 
 /* ── toolbar ───────────────────────────────────────────────────── */
 
@@ -140,15 +143,17 @@ html, body, #root {
 
 .wire {
     fill: none;
-    stroke: var(--pin, #9a9a9a);
+    /* dimmed by default, so a selection's chain (full color) stands out */
+    stroke: color-mix(in srgb, var(--pin, #9a9a9a) 45%, var(--bg));
     stroke-width: 2.5;
-    stroke-opacity: 0.85;
     pointer-events: stroke;
     cursor: pointer;
 }
-.wire:hover { stroke-width: 4; stroke-opacity: 1; }
-.wire.selected { stroke-width: 4.5; stroke-opacity: 1; stroke-dasharray: 8 5; }
-.wire.dragging { stroke-dasharray: 6 4; pointer-events: none; }
+.wire:hover { stroke: var(--pin); stroke-width: 4; }
+.wire.selected { stroke: var(--pin); stroke-width: 4.5; stroke-dasharray: 8 5; }
+/* the selection's chain (upstream and downstream) */
+.wire.chain { stroke: var(--pin); stroke-width: 3.5; filter: drop-shadow(0 0 3px var(--pin)); }
+.wire.dragging { stroke: var(--pin); stroke-dasharray: 6 4; pointer-events: none; }
 
 .graph-flash {
     position: absolute;
@@ -191,7 +196,8 @@ html, body, #root {
 .gnode[data-disabled] .gnode-head { background: var(--node-head); }
 .gnode-btn.power.on { color: var(--state-ok); }
 .gnode[data-disabled] .gnode-foot { font-style: italic; }
-.gnode.selected { box-shadow: 0 0 10px 1px var(--glow, transparent), 0 0 0 3px var(--bg), 0 0 0 5px #e6e6e6, 0 4px 14px rgba(0, 0, 0, 0.45); }
+.gnode.chain { outline: 2px dashed #8c8c8c; outline-offset: 4px; }
+.gnode.selected { outline: 2px dashed #e6e6e6; outline-offset: 4px; }
 
 .gnode-head {
     display: flex;
