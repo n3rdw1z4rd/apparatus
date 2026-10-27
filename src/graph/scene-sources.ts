@@ -136,6 +136,10 @@ export function run({ entities, gravity }, { background }) {
         seen.add(id);
         return id === e.id ? e : { ...e, id };
     });
+    // a joint's other end has to be in the scene too
+    for (const e of unique) for (const j of e.joints ?? []) {
+        if (j.to !== null && !seen.has(j.to)) throw new Error(\`a \${j.kind} on \${e.tag || e.id} joins \${j.to}, which isn't in this scene: wire it in too\`);
+    }
     return {
         scene: {
             kind: 'scene2d',

@@ -1,5 +1,6 @@
 import { portTypes, type BehaviorValue, type NodeRegistry, type NodeSpec } from '@n3rdw1z4rd/core/graph';
 import { BEHAVIOR_NODES } from './behaviors';
+import { JOINT_NODES, type JointData } from './joints';
 import { PALETTE, PART_DEFAULTS } from '../core/scene';
 import { SCENE_SOURCES } from './scene-sources';
 
@@ -33,6 +34,8 @@ export interface EntityData {
     body: BodyData | null;
     /** behaviours (from Behave): they run on the body while playing */
     behaviors?: BehaviorValue[];
+    /** joints (from Anchor, Rope, Spring) to other entities or the world */
+    joints?: JointData[];
 }
 
 export interface SceneData {
@@ -149,6 +152,10 @@ export const SCENE_NODES: NodeSpec[] = [
                 seen.add(id);
                 return id === e.id ? e : { ...e, id };
             });
+            // a joint's other end has to be in the scene too
+            for (const e of unique) for (const j of e.joints ?? []) {
+                if (j.to !== null && !seen.has(j.to)) throw new Error(`a ${j.kind} on ${e.tag || e.id} joins ${j.to}, which isn't in this scene: wire it in too`);
+            }
             const scene: SceneData = { kind: 'scene2d', entities: unique, gravity: vec(gravity, { x: 0, y: -9.81 }), background: String(background ?? '#111111') };
             return { scene };
         },
@@ -179,5 +186,6 @@ function entity(id: string, shape: 'box' | 'ball', at: Vec2, angle: number, size
 export function registerSceneNodes(registry: NodeRegistry): void {
     // each carries its source (a script module) so the editor can show and fork it
     for (const spec of SCENE_NODES) registry.register({ ...spec, source: spec.source ?? SCENE_SOURCES[spec.type] });
+    for (const spec of JOINT_NODES) registry.register(spec);
     for (const spec of BEHAVIOR_NODES) registry.register(spec);
 }

@@ -345,6 +345,67 @@ function magnet(registry: NodeRegistry): GraphDoc {
     return b.g;
 }
 
+/* ── joints ──────────────────────────────────────────────────────── */
+
+/** a Newton's cradle on ropes, a ball released from the side, and a box bouncing on a spring */
+function cradle(registry: NodeRegistry): GraphDoc {
+    const b = builder(registry);
+    const { add, link, body, output } = b;
+    const L = 200, R = 18, top = 160;
+    // four balls hanging still: each ball's rope is tied to the point straight above it
+    const hang = add('list/grid2d', 0, 0, { cols: 4, rows: 1, spacing: { x: 2 * R, y: 0 }, center: { x: R, y: top - L } });
+    const ties = add('list/grid2d', 0, 230, { cols: 4, rows: 1, spacing: { x: 2 * R, y: 0 }, center: { x: R, y: top } });
+    const ball = add('shape/ball', 250, 0, { radius: R, color: '#d3d3d3' });
+    link(hang, 'points', ball, 'at');
+    const balls = body(ball, 500, 0, { bounce: 1, friction: 0, density: 4 });
+    const rope = add('physics/rope', 750, 0);
+    link(balls, 'entity', rope, 'entity');
+    link(ties, 'points', rope, 'toAt');
+
+    // the fifth, lifted out to the left on its rope (as placed: the same length)
+    const a = (55 * Math.PI) / 180;
+    const x0 = -3 * R;
+    const lifted = add('shape/ball', 250, 460, { at: { x: x0 - L * Math.sin(a), y: top - L * Math.cos(a) }, radius: R, color: '#e8554e' });
+    const liftedBody = body(lifted, 500, 460, { bounce: 1, friction: 0, density: 4 });
+    const liftedRope = add('physics/rope', 750, 460, { toAt: { x: x0, y: top } });
+    link(liftedBody, 'entity', liftedRope, 'entity');
+
+    const beam = body(add('shape/box', 250, 700, { at: { x: 0, y: top + 6 }, size: { x: 12 * R, y: 12 }, color: FIXED }), 500, 700, { fixed: true });
+
+    // a box on a spring, hung from the beam's right
+    const bob = add('shape/box', 250, 930, { at: { x: 260, y: top - 150 }, size: { x: 44, y: 44 }, color: '#f2a541', angle: 20 });
+    const bobBody = body(bob, 500, 930, {});
+    const spring = add('physics/spring', 750, 930, { length: 110, stiffness: 25, damping: 0.6, at: { x: 0, y: 22 }, toAt: { x: 260, y: top } });
+    link(bobBody, 'entity', spring, 'entity');
+    const hook = body(add('shape/box', 250, 1160, { at: { x: 260, y: top + 6 }, size: { x: 60, y: 12 }, color: FIXED }), 500, 1160, { fixed: true });
+
+    output(1050, 400, [rope, liftedRope, beam, spring, hook], { gravity: { x: 0, y: -9.81 } });
+    return b.g;
+}
+
+/** a chassis with two hinged wheels, driven by the back one's motor, over a bump */
+function car(registry: NodeRegistry): GraphDoc {
+    const b = builder(registry);
+    const { add, link, body, output } = b;
+    const chassis = body(add('shape/box', 0, 0, { at: { x: -260, y: -150 }, size: { x: 120, y: 24 }, color: '#4ea8de' }), 250, 0, { density: 1 });
+
+    const back = body(add('shape/ball', 0, 230, { at: { x: -305, y: -175 }, radius: 18, color: '#d3d3d3' }), 250, 230, { friction: 1.2, density: 1 });
+    const front = body(add('shape/ball', 0, 460, { at: { x: -215, y: -175 }, radius: 18, color: '#d3d3d3' }), 250, 460, { friction: 1.2, density: 1 });
+    const drive = add('physics/anchor', 500, 230, { motor: -540 });
+    link(back, 'entity', drive, 'entity');
+    link(chassis, 'entity', drive, 'to');
+    const free = add('physics/anchor', 500, 460);
+    link(front, 'entity', free, 'entity');
+    link(chassis, 'entity', free, 'to');
+
+    const floor = body(add('shape/box', 0, 700, { at: { x: 0, y: -210 }, size: { x: 900, y: 20 }, color: FIXED }), 250, 700, { fixed: true });
+    const bump = body(add('shape/box', 0, 930, { at: { x: 40, y: -205 }, size: { x: 140, y: 40 }, angle: 12, color: FIXED }), 250, 930, { fixed: true });
+    // a crate to push off the end
+    const crate = body(add('shape/box', 0, 1160, { at: { x: 260, y: -180 }, size: { x: 40, y: 40 }, color: '#f2a541' }), 250, 1160, { density: 0.5 });
+    output(800, 400, [chassis, drive, free, floor, bump, crate]);
+    return b.g;
+}
+
 export const EXAMPLES: Example[] = [
     { id: 'sandbox', label: 'Sandbox', description: 'the original apparatus scene', make: sandbox },
     { id: 'plinko', label: 'Plinko', description: 'pegs from a staggered grid, balls to drop, an animated spinner', make: plinko },
@@ -355,6 +416,8 @@ export const EXAMPLES: Example[] = [
     { id: 'spiral', label: 'Spiral', description: 'a script node lays the pegs out on a spiral', make: spiral },
     { id: 'fan', label: 'Fan', description: 'behaviours: a fan blows light balls at a wall (the original apparatus fan)', make: fan },
     { id: 'dropper', label: 'Dropper', description: 'behaviours: a Spawner nozzle keeps dropping balls through plinko pegs', make: dropper },
+    { id: 'cradle', label: 'Cradle', description: 'joints: balls on ropes (a rough Newton’s cradle) and a box on a spring', make: cradle },
+    { id: 'car', label: 'Car', description: 'joints: wheels anchored to a chassis with hinges; the back one has a motor', make: car },
     { id: 'magnet', label: 'Magnet', description: 'behaviours: drag the red ball while playing — it pulls the others in', make: magnet },
 ];
 

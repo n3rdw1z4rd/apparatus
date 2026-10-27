@@ -1,9 +1,10 @@
 import { EditorCamera, World, pickEntity, type ThreeEntity } from '@n3rdw1z4rd/core/three';
 import { Look, Meta, RigidBody, Shape } from '../core/components';
 import { normalizePart, type PartDef } from '../core/scene';
-import type { BehaviorRef } from '../physics/protocol';
+import type { BehaviorRef, JointInit } from '../physics/protocol';
 import { PhysicsClient, type FrameInfo } from '../physics/physics-client';
 import { Renderer } from '../render/renderer';
+import { JointView, worldPoint } from './joint-view';
 import { wheelIntent } from './wheel';
 import type { EntityData, SceneData } from './scene-nodes';
 
@@ -39,12 +40,14 @@ export class Engine {
     private time = 0;
     private frame = 0;
     private fitted = false;
+    private readonly joints = new JointView();
 
     constructor(container: HTMLElement) {
         this.camera.minZoom = 0.05;
         this.camera.maxZoom = 8;
         this.renderer = new Renderer(container, this.camera, this.world);
         this.renderer.canvas.classList.add('viewport-canvas');
+        this.renderer.overlay.add(this.joints.group);
         this.attachInput();
         this.renderer.start((dt) => this.tick(dt));
     }
@@ -99,9 +102,10 @@ export class Engine {
             const behaviors = data.behaviors?.map(({ type, node, params, source }) => ({ type, node, params, source }));
             bodies.push({ id: n++, part: toPart(data), ...(behaviors?.length ? { behaviors } : {}) });
         }
+        const joints = this.jointInits(new Map([...this.bodyIds].map(([n, e]) => [e, n])));
         const g = this.scene.gravity;
         // the worker speaks the legacy convention: +y down
-        this.physics!.play({ bodies, gravity: { x: g.x, y: -g.y }, timeScale: 1, paused: false, seed: 1, grid: 32, script: null });
+        this.physics!.play({ bodies, joints, gravity: { x: g.x, y: -g.y }, timeScale: 1, paused: false, seed: 1, grid: 32, script: null });
         this.time = 0;
         this.frame = 0;
         this.setState('playing');
@@ -110,6 +114,7 @@ export class Engine {
     stop(): void {
         if (this.state !== 'playing') return;
         this.physics?.stop();
+        this.joints.lengths.clear();
         this.bodyIds.clear();
         this.simulated.clear();
         for (const e of this.spawned) this.world.remove(e);
@@ -185,6 +190,51 @@ export class Engine {
         }
     }
 
+    /**
+     * The scene's joints, for the physics worker (+y down, angles clockwise): from where the
+     * entities are as play starts. A joint on an entity that isn't simulated is left out; one to
+     * an entity that isn't simulated holds on to where that entity is, in the world.
+     */
+    private jointInits(numberOf: Map<ThreeEntity, number>): JointInit[] {
+        const out: JointInit[] = [];
+        const scene = this.scene!;
+        const dataOf = new Map(scene.entities.map((d) => [d.id, d]));
+        const flip = (v: { x: number; y: number }) => ({ x: v.x, y: -v.y });
+        const rad = (deg: number) => (deg * Math.PI) / 180;
+        const frame = (d: EntityData) => ({ x: d.x, y: d.y, angle: rad(d.angle) });
+        for (const d of scene.entities) {
+            const a = numberOf.get(this.byId.get(d.id)!);
+            (d.joints ?? []).forEach((j, i) => {
+                const other = j.to ? dataOf.get(j.to) : null;
+                if (a === undefined || other === undefined) return;
+                const otherBody = other ? this.byId.get(other.id) : undefined;
+                const b = otherBody ? numberOf.get(otherBody) ?? null : null;
+                const pA = worldPoint(frame(d), j.at);
+                const pB = j.kind === 'anchor' ? pA : other ? worldPoint(frame(other), j.toAt) : j.toAt;
+                // b's end: local to b, or (b not simulated) where it is in the world
+                let anchorB = pB;
+                if (b !== null && other) {
+                    const c = Math.cos(-rad(other.angle)), s = Math.sin(-rad(other.angle));
+                    const ox = pB.x - other.x, oy = pB.y - other.y;
+                    anchorB = { x: ox * c - oy * s, y: ox * s + oy * c };
+                }
+                const length = j.length || Math.hypot(pB.x - pA.x, pB.y - pA.y);
+                if (j.kind !== 'anchor') this.joints.lengths.set(JointView.key(d.id, i), length);
+                out.push({
+                    kind: j.kind, a, b,
+                    anchorA: flip(j.at), anchorB: flip(anchorB),
+                    hinge: j.hinge,
+                    // welded: b's angle minus a's, in the worker's (clockwise) sense
+                    relAngle: rad(d.angle - (b !== null && other ? other.angle : 0)),
+                    motor: -rad(j.motor ?? 0),
+                    length, stiffness: j.stiffness, damping: j.damping,
+                    collide: j.collide,
+                });
+            });
+        }
+        return out;
+    }
+
     /** A spawned body's part (+y down) → a drawn entity (+y up). */
     private entityFromPart(raw: PartDef): ThreeEntity {
         const part = normalizePart(raw)!;
@@ -253,6 +303,7 @@ export class Engine {
             this.onFrame(this.time, dt, this.frame);
             if (this.physics?.hung) this.restartPhysics();
         }
+        this.joints.update(this.scene, this.byId);
         this.renderer.draw({
             grid: 32,
             showGrid: this.state === 'building',

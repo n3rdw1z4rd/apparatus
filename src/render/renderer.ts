@@ -63,6 +63,9 @@ export class Renderer {
     /** called while the gizmo moves the attached entity, and once when the drag ends */
     onGizmoChange: (e: ThreeEntity, done: boolean) => void = () => {};
 
+    /** drawn over the parts (the graph engine's joints) */
+    readonly overlay = new Group();
+
     private readonly under = new Scene();
     private readonly over = new Scene();
     private readonly grid = new AdaptiveGrid({ color: '#262626', originColor: '#555555' });
@@ -86,7 +89,7 @@ export class Renderer {
         this.canvas.after(this.labels);
 
         this.under.add(this.grid);
-        this.over.add(this.hoverLine, this.selectLine);
+        this.over.add(this.overlay, this.hoverLine, this.selectLine);
 
         // Created before the stage input so its pointerdown runs first and the input can
         // tell whether a press landed on a gizmo handle.

@@ -1,6 +1,6 @@
 import { WorkerInterface } from '@n3rdw1z4rd/core';
 import type { PartDef } from '../core/scene';
-import type { BodyInit, FromWorker, PointerMsg, SpawnedBody, ToWorker, Vec2 } from './protocol';
+import type { BodyInit, JointInit, FromWorker, PointerMsg, SpawnedBody, ToWorker, Vec2 } from './protocol';
 import workerUrl from './physics.worker.ts?worker&url';
 
 /** No answer for this long means the worker is stuck (e.g. a script looping forever). */
@@ -102,7 +102,7 @@ export class PhysicsClient extends WorkerInterface<FromWorker, ToWorker> {
         return this._playing && !this._paused && this._lastFrameAt > 0 && now - this._lastFrameAt > HANG_MS;
     }
 
-    play(opts: { bodies: BodyInit[]; gravity: Vec2; timeScale: number; paused: boolean; seed: number; grid: number; script: string | null }): void {
+    play(opts: { bodies: BodyInit[]; joints?: JointInit[]; gravity: Vec2; timeScale: number; paused: boolean; seed: number; grid: number; script: string | null }): void {
         this._playing = true;
         this._paused = opts.paused;
         // Give the first frame (script compile + setup) the full grace period.

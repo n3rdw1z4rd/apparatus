@@ -17,6 +17,29 @@ export interface BodyInit {
     behaviors?: BehaviorRef[];
 }
 
+/**
+ * A joint between two bodies, or a body and the world (b: null). Worker convention: px, +y down,
+ * radians clockwise on screen. Anchors are local to each body (a point in the world when b is null).
+ */
+export interface JointInit {
+    kind: 'anchor' | 'rope' | 'spring';
+    a: number;
+    b: number | null;
+    anchorA: Vec2;
+    anchorB: Vec2;
+    /** anchor: hinge (revolute) or welded (fixed) */
+    hinge?: boolean;
+    /** anchor (welded): b's angle minus a's, as placed */
+    relAngle?: number;
+    /** anchor (hinge): rad/s, the worker's sense */
+    motor?: number;
+    /** rope: max length; spring: rest length (px) */
+    length?: number;
+    stiffness?: number;
+    damping?: number;
+    collide: boolean;
+}
+
 export interface Vec2 {
     x: number;
     y: number;
@@ -34,7 +57,7 @@ export interface PointerMsg {
 }
 
 export type ToWorker =
-    | { t: 'play'; bodies: BodyInit[]; gravity: Vec2; timeScale: number; paused: boolean; seed: number; grid: number; script: string | null }
+    | { t: 'play'; bodies: BodyInit[]; joints?: JointInit[]; gravity: Vec2; timeScale: number; paused: boolean; seed: number; grid: number; script: string | null }
     | { t: 'stop' }
     | { t: 'pause'; paused: boolean }
     | { t: 'step' }

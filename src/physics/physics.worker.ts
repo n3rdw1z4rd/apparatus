@@ -1,10 +1,10 @@
 /// <reference lib="webworker" />
 import type RAPIER from '@dimforge/rapier2d';
-import type { RigidBody, World } from '@dimforge/rapier2d';
+import type { JointData, RevoluteImpulseJoint, RigidBody, World } from '@dimforge/rapier2d';
 import { Rng } from '@n3rdw1z4rd/core';
 import { normalizePart, PART_DEFAULTS, PX_PER_M, type PartDef } from '../core/scene';
 import { compileScript, describeError, type ScriptHooks } from '../core/script';
-import { SPAWN_ID_BASE, type BehaviorRef, type FromWorker, type PointerMsg, type ToWorker, type Vec2 } from './protocol';
+import { SPAWN_ID_BASE, type BehaviorRef, type FromWorker, type JointInit, type PointerMsg, type ToWorker, type Vec2 } from './protocol';
 
 /*
  * Rapier and scene scripts live here, off the main thread. A script that
@@ -288,6 +288,34 @@ function createBody(id: number, raw: PartDef): BodyHandle | null {
     return handle;
 }
 
+/**
+ * Joints (from the graph's Anchor, Rope and Spring nodes). Rapier's body1 is the `to` side (or a
+ * fixed ground body at the origin, for the world) and body2 the entity the joint is on, so a
+ * hinge motor turns that entity relative to what it's pinned to.
+ */
+function createJoints(list: JointInit[]): void {
+    if (!world) return;
+    const byId = new Map<number, BodyHandle>();
+    for (const b of handles.values()) byId.set(b.id, b);
+    let ground: RigidBody | null = null;
+    const m = (v: Vec2) => ({ x: v.x / P, y: v.y / P });
+    for (const j of list) {
+        const a = byId.get(j.a);
+        const b = j.b === null ? null : byId.get(j.b);
+        if (!a || b === undefined) continue;
+        const rb1 = b ? b.rb : (ground ??= world.createRigidBody(R.RigidBodyDesc.fixed()));
+        const a1 = m(j.anchorB);
+        const a2 = m(j.anchorA);
+        let data: JointData;
+        if (j.kind === 'anchor') data = j.hinge ? R.JointData.revolute(a1, a2) : R.JointData.fixed(a1, 0, a2, j.relAngle ?? 0);
+        else if (j.kind === 'rope') data = R.JointData.rope(Math.max(0, j.length ?? 0) / P, a1, a2);
+        else data = R.JointData.spring(Math.max(0, j.length ?? 0) / P, j.stiffness ?? 30, j.damping ?? 1, a1, a2);
+        const joint = world.createImpulseJoint(data, rb1, a.rb, true);
+        joint.setContactsEnabled(j.collide);
+        if (j.kind === 'anchor' && j.hinge && j.motor) (joint as RevoluteImpulseJoint).configureMotorVelocity(j.motor, 50);
+    }
+}
+
 /* ------------------------------------------------------------------ */
 /* Script APIs                                                          */
 /* ------------------------------------------------------------------ */
@@ -363,6 +391,7 @@ async function play(msg: Extract<ToWorker, { t: 'play' }>): Promise<void> {
         const body = createBody(b.id, b.part);
         if (body && b.behaviors?.length) withBehaviors.push([body, b.behaviors]);
     }
+    if (msg.joints?.length) createJoints(msg.joints);
     // compile every behaviour before the first step; then setup, in body order
     for (const [body, refs] of withBehaviors) await attachBehaviors(body, refs, false);
     if (token !== playToken) return;
