@@ -6,6 +6,7 @@ import { normalizePart, type PartDef } from '../core/scene';
 import type { BehaviorRef, JointInit } from '../physics/protocol';
 import { PhysicsClient, type FrameInfo } from '../physics/physics-client';
 import { Renderer } from '../render/renderer';
+import { HighlightView } from './highlight-view';
 import { JointView, worldPoint } from './joint-view';
 import { wheelIntent } from './wheel';
 import type { EntityData, SceneData } from './scene-nodes';
@@ -28,6 +29,8 @@ export class Engine {
     /** set by the host: called each frame before drawing (per-frame graph evaluation) */
     onFrame: (time: number, dt: number, frame: number) => void = () => {};
     onStateChange: (state: EngineState) => void = () => {};
+    /** a click on the view while building: the entity under it (its scene id), or null for empty space */
+    onPick: (entityId: string | null, additive: boolean) => void = () => {};
     /** behaviours that threw while playing (each is switched off on its body) */
     onBehaviorError: (errors: { node: string; type: string; message: string }[]) => void = () => {};
 
@@ -43,6 +46,7 @@ export class Engine {
     private frame = 0;
     private fitted = false;
     private readonly joints = new JointView();
+    private readonly highlights = new HighlightView();
     /** the Camera node steers while playing, until you pan (double-click hands it back) */
     private following = true;
     /** you zoomed while following: the camera keeps your zoom */
@@ -60,7 +64,7 @@ export class Engine {
         this.camera.maxZoom = 8;
         this.renderer = new Renderer(container, this.camera, this.world);
         this.renderer.canvas.classList.add('viewport-canvas');
-        this.renderer.overlay.add(this.joints.group, this.frameGuide);
+        this.renderer.overlay.add(this.joints.group, this.highlights.group, this.frameGuide);
         this.frameGuide.visible = false;
         this.frameGuide.frustumCulled = false;
         this.attachInput();
@@ -100,6 +104,16 @@ export class Engine {
         }
 
 
+    }
+
+    /** Outlines these entities (ids as their nodes made them) and rings `picked`. */
+    setHighlight(ids: Set<string>, picked: string | null): void {
+        this.highlights.set(ids, picked);
+    }
+
+    /** The scene's entity ids. */
+    entityIds(): string[] {
+        return this.scene?.entities.map((e) => e.id) ?? [];
     }
 
     play(): void {
@@ -380,6 +394,7 @@ export class Engine {
         }
         this.placeFrameGuide();
         this.joints.update(this.scene, this.byId);
+        this.highlights.update(this.scene, this.byId, this.camera.zoom);
         this.renderer.draw({
             grid: 32,
             showGrid: this.state === 'building',
@@ -409,7 +424,7 @@ export class Engine {
 
     /**
      * With a Camera node, panning while playing takes the camera over; double-click hands it back.
-     * Building: drag pans. Playing: drag is the pointer — it grabs and throws bodies, and
+     * Building: click picks an entity (onPick; shift / ⌘ adds), drag pans. Playing: drag is the pointer — it grabs and throws bodies, and
      * behaviours see it (world.pointer); right / middle drag and two fingers pan. Wheel and
      * pinch zoom; double-click fits. Events don't reach the graph canvas.
      * Pointer coordinates are converted to the canvas's own px: the viewport may sit inside a
@@ -429,12 +444,15 @@ export class Engine {
         /** while playing: the pointer that drives the physics pointer (null: panning) */
         let driving: number | null = null;
         let grab: number | null = null;
+        /** building: a press that hasn't moved (yet) — on release it picks what's under it */
+        let press: { id: number; x: number; y: number } | null = null;
 
         el.addEventListener('pointerdown', (ev) => {
             ev.stopPropagation();
             el.setPointerCapture(ev.pointerId);
             pointers.set(ev.pointerId, { x: ev.clientX, y: ev.clientY });
             pinch = 0;
+            press = this.state === 'building' && ev.button === 0 && pointers.size === 1 ? { id: ev.pointerId, x: ev.clientX, y: ev.clientY } : null;
             if (this.state === 'playing' && ev.button === 0 && pointers.size === 1) {
                 const p = local(ev.clientX, ev.clientY);
                 const hit = pickEntity(this.world, this.camera, p.x, p.y, { slopPx: ev.pointerType === 'touch' ? 14 : 0 })?.entity ?? null;
@@ -463,6 +481,7 @@ export class Engine {
             ev.stopPropagation();
             const cur = { x: ev.clientX, y: ev.clientY };
             pointers.set(ev.pointerId, cur);
+            if (press && Math.hypot(cur.x - press.x, cur.y - press.y) > 4) press = null; // a drag: it pans
             if (driving === ev.pointerId) {
                 const p = local(cur.x, cur.y);
                 this.sendPointer(p.x, p.y, true, true, grab);
@@ -486,6 +505,14 @@ export class Engine {
         const up = (ev: PointerEvent) => {
             pointers.delete(ev.pointerId);
             pinch = 0;
+            if (press?.id === ev.pointerId && ev.type === 'pointerup' && this.state === 'building') {
+                const p = local(ev.clientX, ev.clientY);
+                const hit = pickEntity(this.world, this.camera, p.x, p.y, { slopPx: ev.pointerType === 'touch' ? 10 : 2 })?.entity ?? null;
+                let id: string | null = null;
+                if (hit) for (const [key, e] of this.byId) if (e === hit) id = key;
+                this.onPick(id, ev.shiftKey || ev.metaKey || ev.ctrlKey);
+            }
+            press = null;
             if (driving === ev.pointerId) {
                 const p = local(ev.clientX, ev.clientY);
                 this.sendPointer(p.x, p.y, false, ev.pointerType === 'mouse', null);

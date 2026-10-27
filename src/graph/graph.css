@@ -148,6 +148,8 @@ html, body, #root {
 }
 .wire:hover { stroke-width: 4; stroke-opacity: 1; }
 .wire.selected { stroke-width: 4.5; stroke-opacity: 1; stroke-dasharray: 8 5; }
+/* the selection's chain (upstream and downstream) */
+.wire.chain { stroke-width: 3.5; stroke-opacity: 1; filter: drop-shadow(0 0 3px var(--pin)); }
 .wire.dragging { stroke-dasharray: 6 4; pointer-events: none; }
 
 .graph-flash {
@@ -191,6 +193,7 @@ html, body, #root {
 .gnode[data-disabled] .gnode-head { background: var(--node-head); }
 .gnode-btn.power.on { color: var(--state-ok); }
 .gnode[data-disabled] .gnode-foot { font-style: italic; }
+.gnode.chain { box-shadow: 0 0 10px 1px var(--glow, transparent), 0 0 0 3px var(--bg), 0 0 0 4px #8c8c8c, 0 4px 14px rgba(0, 0, 0, 0.45); }
 .gnode.selected { box-shadow: 0 0 10px 1px var(--glow, transparent), 0 0 0 3px var(--bg), 0 0 0 5px #e6e6e6, 0 4px 14px rgba(0, 0, 0, 0.45); }
 
 .gnode-head {

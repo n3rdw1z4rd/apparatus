@@ -14,6 +14,7 @@ import {
     adjustLayout, doc, docEpoch, docRevision, edit, editPath, enterSubgraph, evaluateFrame, exitSubgraph, rootDoc, runtimeErrors, status, isAnimated, isScriptType, redo, registry, results, scriptsSuspended,
     scriptsTrusted, selection, typesRevision, undo,
 } from './state';
+import { chainOf, entitiesThrough, madeId, sourceOf } from './highlight';
 import { hasWidget, preview, widget } from './widgets';
 
 /* ------------------------------------------------------------------ */
@@ -96,6 +97,10 @@ export class GraphCanvas {
     private readonly crumbs: HTMLElement;
     /** while inside a subgraph: the top-level viewports keep running here */
     private readonly preview: HTMLElement;
+    /** the entity last clicked in a viewport (its node shows which item it is) */
+    private picked: { node: string; index: number | null; entity: string } | null = null;
+    /** wires along the selection's chain */
+    private chainLinks = new Set<string>();
     /** the view (pan / zoom) at each level, so going in and out keeps your place */
     private readonly levelViews = new Map<string, { x: number; y: number; zoom: number }>();
     /** nodes change size as fonts load and widgets settle: their pins move, so the wires follow */
@@ -130,9 +135,11 @@ export class GraphCanvas {
         results.subscribe(() => this.showResults());
         scriptsSuspended.subscribe(() => this.showResults());
         runtimeErrors.subscribe(() => this.showResults());
-        selection.subscribe(() => {
+        selection.subscribe((sel) => {
+            if (this.picked && !sel.has(this.picked.node)) this.picked = null;
             this.markSelection();
             this.showSelbar();
+            this.showResults();
         });
         new ResizeObserver(() => this.drawWires()).observe(this.el);
         void document.fonts?.ready.then(() => this.drawWires());
@@ -559,9 +566,55 @@ export class GraphCanvas {
         });
     }
 
+    /** Selected nodes, and the chain through them (both ways) lit up, nodes and wires. */
     private markSelection(): void {
         const sel = selection.get();
-        for (const [id, v] of this.views) v.el.classList.toggle('selected', sel.has(id));
+        const chain = sel.size ? chainOf(doc, sel) : { nodes: new Set<string>(), links: new Set<string>() };
+        for (const [id, v] of this.views) {
+            v.el.classList.toggle('selected', sel.has(id));
+            v.el.classList.toggle('chain', !sel.has(id) && chain.nodes.has(id));
+        }
+        const changed = chain.links.size !== this.chainLinks.size || [...chain.links].some((l) => !this.chainLinks.has(l));
+        this.chainLinks = chain.links;
+        if (changed) this.drawWires();
+    }
+
+    /** Outlines, in every viewport, the entities the selection's chain runs through. */
+    private updateHighlights(): void {
+        const sel = new Set([...selection.get()].filter((id) => getNode(doc, id)));
+        const chain = sel.size ? chainOf(doc, sel).nodes : new Set<string>();
+        const path = editPath.get();
+        const picked = this.picked?.entity ?? null;
+        for (const vp of this.viewports.values()) {
+            let ids = new Set<string>();
+            if (sel.size && !path.length) {
+                ids = entitiesThrough(chain, sel, results.get());
+            } else if (sel.size) {
+                // inside a subgraph there are no inner results: go by which node made each entity
+                for (const id of vp.engine.entityIds()) {
+                    const src = sourceOf(id, rootDoc(), path);
+                    if (src && chain.has(src.node)) ids.add(madeId(id));
+                }
+            }
+            vp.engine.setHighlight(ids, picked);
+        }
+    }
+
+    /** A click in a viewport: select the node that made the entity (shift / ⌘ adds or removes). */
+    private pickFromViewport(entityId: string | null, additive: boolean): void {
+        const src = entityId ? sourceOf(entityId, rootDoc(), editPath.get()) : null;
+        if (!src) {
+            if (!additive) {
+                this.picked = null;
+                selection.set(new Set());
+            }
+            return;
+        }
+        const sel = new Set(additive ? selection.get() : []);
+        if (additive && sel.has(src.node)) sel.delete(src.node);
+        else sel.add(src.node);
+        this.picked = sel.has(src.node) ? { node: src.node, index: src.index, entity: madeId(entityId!) } : null;
+        selection.set(sel);
     }
 
     private showResults(): void {
@@ -605,7 +658,10 @@ export class GraphCanvas {
                 const parts: string[] = [];
                 if (def && def.outputs.length) {
                     const first = def.outputs[0];
-                    parts.push(preview(r.outputs[first.name], r.lists[first.name]));
+                    const out = r.outputs[first.name];
+                    // clicked in a viewport: which of its items
+                    if (this.picked?.node === id && this.picked.index !== null && r.lists[first.name] && Array.isArray(out)) parts.push(`item ${this.picked.index + 1} of ${out.length}`);
+                    else parts.push(preview(out, r.lists[first.name]));
                 }
                 if (r.ms >= 0.05) parts.push(`${r.ms.toFixed(1)} ms${state === 'slow' ? ' ⚠' : ''}`);
                 if (r.skipped?.length) parts.push(`${r.skipped.length} input${r.skipped.length === 1 ? '' : 's'} skipped`);
@@ -631,6 +687,7 @@ export class GraphCanvas {
             const scene = src && !src.error && !src.blocked ? (src.outputs[link.from.port] as SceneData) : null;
             vp.engine.setScene(scene?.kind === 'scene2d' ? scene : null);
         }
+        this.updateHighlights();
     }
 
     /* ── wires ─────────────────────────────────────────────────── */
@@ -659,7 +716,8 @@ export class GraphCanvas {
             const b = this.views.get(l.to.node)?.pins.get(`in:${l.to.port}`);
             if (!a || !b) continue;
             const type = a.dataset.type ?? 'any';
-            const path = svg('path', { class: l.id === this.selectedLink ? 'wire selected' : 'wire', d: curve(this.pinCenter(a), this.pinCenter(b)) });
+            const cls = l.id === this.selectedLink ? 'wire selected' : this.chainLinks.has(l.id) ? 'wire chain' : 'wire';
+            const path = svg('path', { class: cls, d: curve(this.pinCenter(a), this.pinCenter(b)) });
             path.style.setProperty('--pin', portTypes.color(type));
             path.addEventListener('pointerdown', (e) => {
                 e.stopPropagation();
@@ -982,6 +1040,7 @@ export class GraphCanvas {
                     b.classList.toggle('on', s === 'playing');
                 }
             };
+            engine.onPick = (id, additive) => this.pickFromViewport(id, additive);
             engine.onFrame = (time, dt, frame) => {
                 if (frame === 0 || isAnimated()) void evaluateFrame({ time, dt, frame });
             };
