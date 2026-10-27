@@ -2,7 +2,7 @@
 
 A programmable 2D physics sandbox in TypeScript. Build a contraption out of boxes, balls, walls and pegs, press play, and watch [Rapier](https://rapier.rs) take over — or write a scene script that generates the contraption for you and drives it while it runs.
 
-Works on a phone just as well as on a desktop.
+### [Live Demo](https://apparatus.n3rdw1z4rd.cloud)
 
 ## What's going on here
 
