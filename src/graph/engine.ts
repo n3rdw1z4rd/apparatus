@@ -8,7 +8,7 @@ import { PhysicsClient, type FrameInfo } from '../physics/physics-client';
 import { Renderer } from '../render/renderer';
 import { HighlightView } from './highlight-view';
 import { JointView, worldPoint } from './joint-view';
-import { wheelIntent } from './wheel';
+import { wheelIntent } from '@n3rdw1z4rd/smoke-ui-node-graph';
 import type { EntityData, SceneData } from './scene-nodes';
 
 /* ------------------------------------------------------------------ */

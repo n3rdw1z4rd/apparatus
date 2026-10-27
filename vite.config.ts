@@ -11,9 +11,9 @@ export default defineConfig({
         wasm(),
     ],
     resolve: {
-        // core may be linked from ../core (npm link), which has its own three in node_modules:
-        // one copy only, or instanceof checks and three's "multiple instances" warning bite
-        dedupe: ['three'],
+        // core and smoke-ui-node-graph may be linked from ../ (npm link), with their own copies
+        // in node_modules: one copy only, or instanceof checks (three) and signals (smoke-ui) bite
+        dedupe: ['three', '@n3rdw1z4rd/core', '@n3rdw1z4rd/smoke-ui'],
     },
     worker: {
         format: 'es',
