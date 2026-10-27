@@ -5,7 +5,7 @@ import {
     bodyIdOf, camera, fitView, markDirty, mode, moveEntity, scriptState, selected, setHovered, setPointer, viewMode, world,
 } from '../app/store';
 import { showTab } from '../app/ui-state';
-import { wheelIntent } from '../graph/wheel';
+import { wheelIntent } from '@n3rdw1z4rd/smoke-ui-node-graph';
 
 /* ------------------------------------------------------------------ */
 /* Pointer, touch and wheel input on the stage canvas.                  */

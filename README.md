@@ -128,6 +128,7 @@ To work against a local checkout of [`@n3rdw1z4rd/core`](https://github.com/n3rd
 ## Tech stack
 
 - **TypeScript** (strict), **Vite**
+- **[@n3rdw1z4rd/smoke-ui-node-graph](https://github.com/n3rdw1z4rd/smoke-ui-node-graph)**: the node graph editor itself (canvas, widgets, selection, groups, subgraphs, code panel, undo, evaluation in a worker); apparatus plugs its Viewport node, previews and examples into it
 - **[@n3rdw1z4rd/core](https://www.npmjs.com/package/@n3rdw1z4rd/core)**:
   - `core/graph`: the graph document format, node registry, evaluator, script nodes and subgraphs
   - `core/three`: `World` (entities are three.js objects with schema components), `Renderer`, `EditorCamera`, `AdaptiveGrid`, `pickEntity`
@@ -146,23 +147,20 @@ To work against a local checkout of [`@n3rdw1z4rd/core`](https://github.com/n3rd
 ## Project structure
 
 ```
-src/graph/                   # the graph editor (index.html)
-├── main.tsx                 # app shell: toolbar, examples menu, banners, help bar
+src/graph/                   # apparatus's graph editor (index.html), on smoke-ui-node-graph
+├── main.tsx                 # configures the editor: nodes, worker, examples menu, Viewport plugin
+├── viewport.ts              # the Viewport node's body: engine, play, full screen, picking, outlines
+├── previews.ts              # footer previews for scenes, entities, behaviours, cameras
 ├── editor/
-│   ├── canvas.ts            # nodes, wires, pins, selection, groups, subgraphs, viewports
-│   ├── state.ts             # the document, undo / redo, autosave, evaluation, scripts
-│   ├── widgets.ts           # node widgets and output previews
-│   ├── menu.ts              # the add-node menu
-│   ├── script-panel.ts      # writing and editing node code
-│   ├── clipboard.ts         # copy / paste nodes (with their scripts and subgraphs)
-│   └── examples.ts          # the Examples menu
+│   ├── examples.ts          # the Examples menu
+│   └── highlight.ts         # which node made an entity; the entities a selection runs through
 ├── scene-nodes.ts           # Box, Ball, Rigid Body, Move, Tag, Scene, Camera, Viewport
 ├── joints.ts                # Anchor, Rope, Spring
-├── behaviors.ts             # the behaviour nodes and their API
+├── behaviors.ts             # the behaviour nodes, their API, and the behaviour module kind
 ├── engine.ts                # runs a scene: World diffing, play / stop, camera, input
 ├── joint-view.ts            # draws ropes, springs and anchors
-├── eval.worker.ts           # evaluates the graph off the main thread (+ eval-client / protocol)
-└── wheel.ts                 # scroll pans, pinch / ⌘-scroll zooms
+├── highlight-view.ts        # outlines around selected entities
+└── eval.worker.ts           # evaluates the graph off the main thread (serveGraphEvaluation)
 src/physics/                 # Rapier + behaviours in a Web Worker (shared by both editors)
 src/render/renderer.ts       # three.js scene drawing (shared)
 src/main.tsx, app/, ui/,
