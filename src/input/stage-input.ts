@@ -5,6 +5,7 @@ import {
     bodyIdOf, camera, fitView, markDirty, mode, moveEntity, scriptState, selected, setHovered, setPointer, viewMode, world,
 } from '../app/store';
 import { showTab } from '../app/ui-state';
+import { wheelIntent } from '../graph/wheel';
 
 /* ------------------------------------------------------------------ */
 /* Pointer, touch and wheel input on the stage canvas.                  */
@@ -210,14 +211,9 @@ export function attachStageInput(canvas: HTMLCanvasElement, opts: { gizmoActive:
     canvas.addEventListener('wheel', (ev) => {
         ev.preventDefault();
         const p = local(ev);
-        const scale = ev.deltaMode === 1 ? 16 : ev.deltaMode === 2 ? 400 : 1;
-        // Trackpad two-finger scroll pans; pinch (ctrlKey) and mouse wheels zoom.
-        if (!ev.ctrlKey && ev.deltaX !== 0) {
-            camera.pan(-ev.deltaX * scale, -ev.deltaY * scale);
-            return;
-        }
-        const k = ev.ctrlKey ? 0.01 : 0.0015;
-        camera.zoomAt(p.x, p.y, Math.exp(-ev.deltaY * scale * k));
+        const w = wheelIntent(ev);
+        if (w.kind === 'pan') camera.pan(-w.dx, -w.dy);
+        else camera.zoomAt(p.x, p.y, w.factor);
     }, { passive: false });
 
     window.addEventListener('blur', () => {
