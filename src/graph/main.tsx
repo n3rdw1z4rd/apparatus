@@ -66,7 +66,6 @@ const ExamplesMenu = () => {
 const Toolbar = () => (
     <nav className="graph-bar">
         <a className="graph-brand" href="./" title="apparatus">apparatus</a>
-        <a className="graph-brand muted" href="./legacy.html" title="the original scene editor">legacy</a>
         <button className="btn" title="add a node (a, double-click or right-click the canvas)" onClick={() => {
             const r = canvas.el.getBoundingClientRect();
             canvas.addNodeAt(r.left + r.width / 2 - 140, r.top + 80);
@@ -83,6 +82,7 @@ const Toolbar = () => (
         }}>reset</button>
         <span className="graph-status">{status}</span>
         <ExamplesMenu />
+        <a className="graph-legacy" href="./legacy.html" title="the original apparatus scene editor">legacy editor</a>
     </nav>
 ) as HTMLElement;
 
