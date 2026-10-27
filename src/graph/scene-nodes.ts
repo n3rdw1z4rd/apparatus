@@ -1,5 +1,5 @@
-import { portTypes, type BehaviorValue, type NodeRegistry, type NodeSpec } from '@n3rdw1z4rd/core/graph';
-import { BEHAVIOR_NODES } from './behaviors';
+import { portTypes, type NodeRegistry, type NodeSpec } from '@n3rdw1z4rd/core/graph';
+import { BEHAVIOR_NODES, type BehaviorValue } from './behaviors';
 import { JOINT_NODES, type JointData } from './joints';
 import { PALETTE, PART_DEFAULTS } from '../core/scene';
 import { SCENE_SOURCES } from './scene-sources';

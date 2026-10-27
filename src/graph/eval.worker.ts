@@ -1,5 +1,6 @@
 /// <reference lib="webworker" />
 import { GraphEvaluator, compileNodeScript, createNodeRegistry, registerSubgraphs, type GraphDoc, type NodeResult } from '@n3rdw1z4rd/core/graph';
+import { BEHAVIOR_KIND } from './behaviors';
 import type { FromEvalWorker, NodeInterface, ToEvalWorker } from './eval-protocol';
 import { registerSceneNodes } from './scene-nodes';
 
@@ -49,7 +50,7 @@ self.onmessage = async (ev: MessageEvent<ToEvalWorker>) => {
 
         case 'compile': {
             try {
-                const def = await compileNodeScript(msg.type, msg.source);
+                const def = await compileNodeScript(msg.type, msg.source, { kinds: [BEHAVIOR_KIND] });
                 registry.register(def);
                 const spec: NodeInterface = {
                     type: def.type, title: def.title, category: def.category, description: def.description,
