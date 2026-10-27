@@ -1,3 +1,4 @@
+import { radians } from '@n3rdw1z4rd/core';
 import { EditorCamera, World, pickEntity, type ThreeEntity } from '@n3rdw1z4rd/core/three';
 import { BufferGeometry, Float32BufferAttribute, LineBasicMaterial, LineLoop } from 'three';
 import { Look, Meta, RigidBody, Shape } from '../core/components';
@@ -200,7 +201,7 @@ export class Engine {
     private apply(e: ThreeEntity, d: EntityData): void {
         e.visible = true;
         e.position.set(d.x, d.y, 0);
-        e.rotation.z = (d.angle * Math.PI) / 180;
+        e.rotation.z = radians(d.angle);
         e.name = d.tag || d.id;
         const s = this.world.getComponent<Shape>(e, Shape)!;
         s.kind = d.shape;
@@ -227,8 +228,7 @@ export class Engine {
         const scene = this.scene!;
         const dataOf = new Map(scene.entities.map((d) => [d.id, d]));
         const flip = (v: { x: number; y: number }) => ({ x: v.x, y: -v.y });
-        const rad = (deg: number) => (deg * Math.PI) / 180;
-        const frame = (d: EntityData) => ({ x: d.x, y: d.y, angle: rad(d.angle) });
+        const frame = (d: EntityData) => ({ x: d.x, y: d.y, angle: radians(d.angle) });
         for (const d of scene.entities) {
             const a = numberOf.get(this.byId.get(d.id)!);
             (d.joints ?? []).forEach((j, i) => {
@@ -241,7 +241,7 @@ export class Engine {
                 // b's end: local to b, or (b not simulated) where it is in the world
                 let anchorB = pB;
                 if (b !== null && other) {
-                    const c = Math.cos(-rad(other.angle)), s = Math.sin(-rad(other.angle));
+                    const c = Math.cos(-radians(other.angle)), s = Math.sin(-radians(other.angle));
                     const ox = pB.x - other.x, oy = pB.y - other.y;
                     anchorB = { x: ox * c - oy * s, y: ox * s + oy * c };
                 }
@@ -252,8 +252,8 @@ export class Engine {
                     anchorA: flip(j.at), anchorB: flip(anchorB),
                     hinge: j.hinge,
                     // welded: b's angle minus a's, in the worker's (clockwise) sense
-                    relAngle: rad(d.angle - (b !== null && other ? other.angle : 0)),
-                    motor: -rad(j.motor ?? 0),
+                    relAngle: radians(d.angle - (b !== null && other ? other.angle : 0)),
+                    motor: -radians(j.motor ?? 0),
                     length, stiffness: j.stiffness, damping: j.damping,
                     collide: j.collide,
                 });
@@ -526,7 +526,7 @@ export class Engine {
 /** Scene entity (editor coordinates) → the physics worker's part (+y down, clockwise). */
 function toPart(d: EntityData): PartDef {
     const part: PartDef = {
-        shape: d.shape, x: d.x, y: -d.y, angle: -(d.angle * Math.PI) / 180, color: d.color,
+        shape: d.shape, x: d.x, y: -d.y, angle: -radians(d.angle), color: d.color,
         fixed: d.body?.fixed, friction: d.body?.friction, bounce: d.body?.bounce, density: d.body?.density,
     };
     if (d.shape === 'box') {

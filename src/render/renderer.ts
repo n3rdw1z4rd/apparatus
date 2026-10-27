@@ -1,4 +1,4 @@
-import { Clock } from '@n3rdw1z4rd/core';
+import { Clock, degrees } from '@n3rdw1z4rd/core';
 import { AdaptiveGrid, Renderer as GlRenderer, type EditorCamera, type ThreeEntity, type World } from '@n3rdw1z4rd/core/three';
 import {
     BufferAttribute, BufferGeometry, CircleGeometry, DoubleSide, Group, Line, LineBasicMaterial, LineDashedMaterial, LineLoop, Mesh,
@@ -287,7 +287,7 @@ export class Renderer {
         for (const e of parts) {
             const s = this.world.getComponent<Shape>(e, Shape)!;
             const tag = this.world.getComponent<Meta>(e, Meta)?.tag;
-            const deg = Math.round((e.rotation.z * 180) / Math.PI);
+            const deg = Math.round(degrees(e.rotation.z));
             const text = [tag ? `#${tag}` : '', `${e.position.x.toFixed(0)}, ${e.position.y.toFixed(0)}`, deg ? `${deg}°` : '']
                 .filter(Boolean).join('  ');
 

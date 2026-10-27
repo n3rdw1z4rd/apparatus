@@ -1,4 +1,6 @@
+import { radians } from '@n3rdw1z4rd/core';
 import { addNode, connect, createGraph, type GraphDoc, type GraphNode, type NodeRegistry } from '@n3rdw1z4rd/core/graph';
+import { PALETTE } from '../../core/scene';
 
 /* ------------------------------------------------------------------ */
 /* Example graphs (the Examples menu). Coordinates are the editor's:    */
@@ -15,7 +17,6 @@ export interface Example {
 
 const G = 32;
 const FIXED = '#5b6b73';
-const PALETTE = ['#e8554e', '#f2a541', '#f4d35e', '#3fd1a4', '#4ea8de', '#9b6dde', '#e86fb0', '#d3d3d3'];
 
 type Node = GraphNode;
 
@@ -363,7 +364,7 @@ function cradle(registry: NodeRegistry): GraphDoc {
     link(ties, 'points', rope, 'toAt');
 
     // the fifth, lifted out to the left on its rope (as placed: the same length)
-    const a = (55 * Math.PI) / 180;
+    const a = radians(55);
     const x0 = -3 * R;
     const lifted = add('shape/ball', 250, 460, { at: { x: x0 - L * Math.sin(a), y: top - L * Math.cos(a) }, radius: R, color: '#e8554e' });
     const liftedBody = body(lifted, 500, 460, { bounce: 1, friction: 0, density: 4 });

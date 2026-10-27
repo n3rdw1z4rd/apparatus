@@ -1,3 +1,4 @@
+import { clamp } from '@n3rdw1z4rd/core';
 import type { WidgetSpec } from '@n3rdw1z4rd/core/graph';
 import { parseType } from '@n3rdw1z4rd/core/graph';
 import { h } from './dom';
@@ -71,14 +72,14 @@ export function widget(type: string, spec: WidgetSpec, value: unknown, commit: (
 
 function numberField(value: number, spec: WidgetSpec, commit: (v: unknown) => void): HTMLInputElement {
     const step = spec.step ?? 1;
-    const clamp = (v: number) => Math.min(spec.max ?? Infinity, Math.max(spec.min ?? -Infinity, v));
+    const limit = (v: number) => clamp(v, spec.min ?? -Infinity, spec.max ?? Infinity);
     const fmt = (v: number) => String(Math.round(v * 1000) / 1000);
     const inp = h('input', { type: 'text', inputMode: 'decimal', className: 'gw-num', title: 'drag sideways to scrub' });
     inp.value = fmt(value);
     let current = value;
 
     const set = (v: number) => {
-        current = clamp(v);
+        current = limit(v);
         inp.value = fmt(current);
         commit(current);
     };

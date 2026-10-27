@@ -1,3 +1,4 @@
+import { clamp, degrees, radians } from '@n3rdw1z4rd/core';
 import { computed, Signal } from '@n3rdw1z4rd/smoke-ui';
 import { applyFieldValue, type ComponentType, type FieldDef, type ThreeEntity } from '@n3rdw1z4rd/core/three';
 import { Meta } from '../core/components';
@@ -56,7 +57,7 @@ function pull(): void {
         selName.set(e.name);
         selX.set(round(e.position.x));
         selY.set(round(e.position.y));
-        selAngle.set(Math.round((e.rotation.z * 180) / Math.PI * 10) / 10);
+        selAngle.set(Math.round(degrees(e.rotation.z) * 10) / 10);
         const names = world.componentNames(e);
         if (names.join('|') !== selComponents.get().join('|')) selComponents.set(names);
         selGenerated.set(!!world.getComponent<Meta>(e, Meta)?.gen);
@@ -90,12 +91,12 @@ function push<T>(signal: Signal<T>, write: (e: ThreeEntity, value: T) => boolean
     });
 }
 
-const finite = (v: number, min = -1e6, max = 1e6) => (Number.isFinite(v) ? Math.min(max, Math.max(min, v)) : null);
+const finite = (v: number, min = -1e6, max = 1e6) => (Number.isFinite(v) ? clamp(v, min, max) : null);
 
 push(selName, (e, v) => { e.name = v.trim().slice(0, 60); }, undefined, 'name');
 push(selX, (e, v) => { const n = finite(v); if (n === null) return false; e.position.x = n; });
 push(selY, (e, v) => { const n = finite(v); if (n === null) return false; e.position.y = n; });
-push(selAngle, (e, v) => { const n = finite(v, -3600, 3600); if (n === null) return false; e.rotation.z = (n * Math.PI) / 180; });
+push(selAngle, (e, v) => { const n = finite(v, -3600, 3600); if (n === null) return false; e.rotation.z = radians(n); });
 
 /* ── component groups ─────────────────────────────────────────────── */
 

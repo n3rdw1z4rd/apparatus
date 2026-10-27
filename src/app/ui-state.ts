@@ -1,3 +1,4 @@
+import { clamp } from '@n3rdw1z4rd/core';
 import { Signal } from '@n3rdw1z4rd/smoke-ui';
 
 /* ------------------------------------------------------------------ */
@@ -41,7 +42,7 @@ export const dockOpen = new Signal<boolean>(stored.open ?? !isCompact());
 export const activeTab = new Signal<string>(stored.tab ?? 'scene');
 /** Height of a bottom sheet as a fraction of the screen (set by dragging its grip). */
 export const sheetFraction = new Signal<number>(
-    typeof stored.sheet === 'number' ? Math.min(0.85, Math.max(0.2, stored.sheet)) : 0.5,
+    typeof stored.sheet === 'number' ? clamp(stored.sheet, 0.2, 0.85) : 0.5,
 );
 /** Hides the dock and stats; the action bar shrinks to a single "show UI" button. */
 export const uiHidden = new Signal(false);
